@@ -1,0 +1,559 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserStatus {
+  ACTIVE
+  SUSPENDED
+  BLOCKED
+  DELETED
+}
+
+enum AccountStatus {
+  ACTIVE
+  SUSPENDED
+  BLOCKED
+  CLOSED
+}
+
+enum MemberRole {
+  OWNER
+  MEMBER
+}
+
+enum MembershipStatus {
+  INVITED
+  ACTIVE
+  REMOVED
+}
+
+enum BillingInterval {
+  MONTH
+  YEAR
+  LIFETIME
+}
+
+enum BillingMode {
+  MANUAL
+  AUTOMATIC
+  PERMANENT
+  CODE
+}
+
+enum SubscriptionStatus {
+  TRIALING
+  ACTIVE
+  PAST_DUE
+  EXPIRED
+  SUSPENDED
+  BLOCKED
+  CANCELLED
+}
+
+enum PaymentStatus {
+  PENDING
+  PAID
+  FAILED
+  REFUNDED
+  CANCELLED
+}
+
+enum PaymentProviderKind {
+  MANUAL
+  WOMPI
+  MERCADO_PAGO
+  STRIPE
+  ACTIVATION_CODE
+  OTHER
+}
+
+enum DeviceStatus {
+  ACTIVE
+  REVOKED
+  BLOCKED
+}
+
+enum DevicePlatform {
+  ANDROID_MOBILE
+  ANDROID_TV
+  ANDROID_AUTO
+  WINDOWS
+  LINUX
+  MACOS
+}
+
+enum UsageSessionStatus {
+  ACTIVE
+  REVOKED
+  RELEASED
+  EXPIRED
+}
+
+enum ActivationCodeKind {
+  TRIAL
+  PREPAID
+  COMPLIMENTARY
+  LIFETIME
+}
+
+enum ActivationDurationUnit {
+  DAY
+  MONTH
+  YEAR
+  LIFETIME
+}
+
+enum ActivationCodeStatus {
+  AVAILABLE
+  REDEEMED
+  REVOKED
+  EXPIRED
+}
+
+enum DeviceLinkStatus {
+  PENDING
+  APPROVED
+  CLAIMED
+  EXPIRED
+  CANCELLED
+}
+
+enum ReleaseChannel {
+  STABLE
+  BETA
+}
+
+enum ReleasePolicy {
+  OPTIONAL
+  RECOMMENDED
+  REQUIRED
+}
+
+enum TicketStatus {
+  OPEN
+  IN_PROGRESS
+  WAITING_USER
+  RESOLVED
+  CLOSED
+}
+
+enum TicketPriority {
+  LOW
+  NORMAL
+  HIGH
+  URGENT
+}
+
+model User {
+  id              String       @id @default(cuid())
+  email           String       @unique
+  passwordHash    String
+  displayName     String?
+  avatarObjectKey String?
+  status          UserStatus   @default(ACTIVE)
+  isAdmin         Boolean      @default(false)
+  emailVerifiedAt DateTime?
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  ownedAccounts       Account[]        @relation("AccountOwner")
+  memberships         AccountMember[]
+  devices             Device[]
+  sessions            Session[]
+  usageSessions       UsageSession[]
+  history             WatchProgress[]
+  tickets             SupportTicket[]
+  auditLogs           AuditLog[]       @relation("AuditActor")
+  invitationsSent     Invitation[]     @relation("InvitationCreator")
+  activationRedemptions ActivationRedemption[]
+  approvedDeviceLinks DeviceLink[]     @relation("DeviceLinkApprover")
+}
+
+model Account {
+  id          String        @id @default(cuid())
+  ownerUserId String
+  status      AccountStatus @default(ACTIVE)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  owner         User                 @relation("AccountOwner", fields: [ownerUserId], references: [id])
+  members       AccountMember[]
+  subscriptions Subscription[]
+  payments      Payment[]
+  devices       Device[]
+  invitations   Invitation[]
+  leases        AccessLease[]
+  tickets       SupportTicket[]
+  auditLogs     AuditLog[]
+  redemptions   ActivationRedemption[]
+  deviceLinks   DeviceLink[]
+
+  @@index([ownerUserId])
+}
+
+model AccountMember {
+  id        String           @id @default(cuid())
+  accountId String
+  userId    String
+  role      MemberRole       @default(MEMBER)
+  status    MembershipStatus @default(ACTIVE)
+  invitedAt DateTime?
+  joinedAt  DateTime?        @default(now())
+  removedAt DateTime?
+
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([accountId, userId])
+  @@index([userId, status])
+}
+
+model Plan {
+  id                        String          @id @default(cuid())
+  code                      String          @unique
+  name                      String
+  description               String?
+  priceCents                Int
+  currency                  String          @default("COP")
+  billingInterval           BillingInterval
+  billingMode               BillingMode     @default(AUTOMATIC)
+  maxAdditionalMembers      Int             @default(0)
+  maxDevicesPerUser         Int             @default(3)
+  maxConcurrentUsagePerUser Int             @default(1)
+  maxDeviceChangesPerWindow Int             @default(6)
+  deviceChangeWindowDays    Int             @default(30)
+  canInviteMembers          Boolean         @default(false)
+  public                    Boolean         @default(true)
+  active                    Boolean         @default(true)
+  createdAt                 DateTime        @default(now())
+  updatedAt                 DateTime        @updatedAt
+
+  subscriptions  Subscription[]
+  activationCodes ActivationCode[]
+}
+
+model Subscription {
+  id                     String              @id @default(cuid())
+  accountId              String
+  planId                 String
+  status                 SubscriptionStatus  @default(ACTIVE)
+  billingMode            BillingMode         @default(AUTOMATIC)
+  currentPeriodStart     DateTime?
+  currentPeriodEnd       DateTime?
+  trialEndsAt            DateTime?
+  cancelAtPeriodEnd      Boolean             @default(false)
+  provider               PaymentProviderKind @default(MANUAL)
+  providerCustomerId     String?
+  providerSubscriptionId String?
+  createdAt              DateTime            @default(now())
+  updatedAt              DateTime            @updatedAt
+
+  account  Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  plan     Plan      @relation(fields: [planId], references: [id])
+  payments Payment[]
+
+  @@index([accountId, status])
+}
+
+model Payment {
+  id                String              @id @default(cuid())
+  accountId         String
+  subscriptionId    String?
+  amountCents       Int
+  currency          String              @default("COP")
+  provider          PaymentProviderKind
+  providerPaymentId String?
+  status            PaymentStatus       @default(PENDING)
+  metadata          Json?
+  paidAt            DateTime?
+  createdAt         DateTime             @default(now())
+
+  account      Account       @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  subscription Subscription? @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
+
+  @@index([accountId, createdAt])
+  @@unique([provider, providerPaymentId])
+}
+
+model Device {
+  id                    String         @id @default(cuid())
+  accountId             String
+  userId                String
+  installationId        String
+  deviceFingerprintHash String?
+  macHash               String?
+  platform              DevicePlatform
+  brand                 String?
+  model                 String?
+  deviceName            String?
+  architecture          String?
+  osVersion             String?
+  appVersion            String?
+  status                DeviceStatus   @default(ACTIVE)
+  firstSeenAt           DateTime       @default(now())
+  lastSeenAt            DateTime       @default(now())
+  revokedAt             DateTime?
+
+  account       Account        @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sessions      Session[]
+  usageSessions UsageSession[]
+  leases        AccessLease[]
+  deviceLinks   DeviceLink[]    @relation("DeviceLinkDevice")
+
+  @@unique([accountId, installationId])
+  @@index([accountId, status])
+  @@index([userId, status])
+}
+
+model DeviceChange {
+  id        String   @id @default(cuid())
+  accountId String
+  userId    String
+  deviceId  String?
+  action    String
+  createdAt DateTime @default(now())
+
+  @@index([userId, createdAt])
+  @@index([accountId, createdAt])
+}
+
+model Session {
+  id               String   @id @default(cuid())
+  userId           String
+  deviceId         String?
+  refreshTokenHash String
+  expiresAt        DateTime
+  revokedAt        DateTime?
+  createdAt        DateTime @default(now())
+  lastUsedAt       DateTime @default(now())
+
+  user   User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  device Device? @relation(fields: [deviceId], references: [id], onDelete: SetNull)
+
+  @@index([userId, revokedAt])
+  @@index([deviceId, revokedAt])
+}
+
+model UsageSession {
+  id              String             @id @default(cuid())
+  userId          String
+  deviceId        String
+  status          UsageSessionStatus @default(ACTIVE)
+  acquiredAt      DateTime           @default(now())
+  lastHeartbeatAt DateTime           @default(now())
+  revokedAt       DateTime?
+  releasedAt      DateTime?
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  device Device @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status])
+  @@index([deviceId, status])
+}
+
+model AccessLease {
+  id                     String   @id @default(cuid())
+  accountId              String
+  userId                 String
+  deviceId               String
+  issuedAt               DateTime @default(now())
+  refreshAfter           DateTime
+  subscriptionValidUntil DateTime?
+  offlineGraceUntil      DateTime
+  tokenId                String   @unique
+
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  device  Device  @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+
+  @@index([deviceId, issuedAt])
+  @@index([userId, issuedAt])
+}
+
+model Invitation {
+  id          String   @id @default(cuid())
+  accountId   String
+  email       String
+  tokenHash   String   @unique
+  createdById String
+  expiresAt   DateTime
+  acceptedAt  DateTime?
+  revokedAt   DateTime?
+  createdAt   DateTime @default(now())
+
+  account   Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  createdBy User    @relation("InvitationCreator", fields: [createdById], references: [id])
+
+  @@index([email, expiresAt])
+}
+
+model ActivationCodeBatch {
+  id           String   @id @default(cuid())
+  name         String
+  campaign     String?
+  reseller     String?
+  notes        String?
+  createdById  String?
+  createdAt    DateTime @default(now())
+  codes        ActivationCode[]
+}
+
+model ActivationCode {
+  id                String                 @id @default(cuid())
+  batchId           String?
+  planId            String
+  codeHash          String                 @unique
+  codePrefix        String
+  kind              ActivationCodeKind
+  status            ActivationCodeStatus   @default(AVAILABLE)
+  durationUnit      ActivationDurationUnit
+  durationValue     Int                    @default(1)
+  redemptionExpiresAt DateTime?
+  redeemedAt        DateTime?
+  createdAt         DateTime               @default(now())
+
+  batch       ActivationCodeBatch? @relation(fields: [batchId], references: [id], onDelete: SetNull)
+  plan        Plan                 @relation(fields: [planId], references: [id])
+  redemption  ActivationRedemption?
+
+  @@index([batchId, status])
+  @@index([planId, status])
+}
+
+model ActivationRedemption {
+  id               String   @id @default(cuid())
+  activationCodeId String   @unique
+  accountId        String
+  userId           String
+  subscriptionId   String?
+  redeemedAt       DateTime @default(now())
+
+  activationCode ActivationCode @relation(fields: [activationCodeId], references: [id])
+  account        Account        @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  user           User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([accountId, redeemedAt])
+  @@index([userId, redeemedAt])
+}
+
+model DeviceLink {
+  id                String           @id @default(cuid())
+  accountId         String?
+  approvedByUserId  String?
+  deviceId          String?
+  codeHash          String           @unique
+  codeHint          String
+  claimSecretHash   String
+  status            DeviceLinkStatus @default(PENDING)
+  devicePayload     Json
+  expiresAt         DateTime
+  approvedAt        DateTime?
+  claimedAt         DateTime?
+  createdAt         DateTime         @default(now())
+
+  account        Account? @relation(fields: [accountId], references: [id], onDelete: SetNull)
+  approvedByUser User?    @relation("DeviceLinkApprover", fields: [approvedByUserId], references: [id], onDelete: SetNull)
+  device         Device?  @relation("DeviceLinkDevice", fields: [deviceId], references: [id], onDelete: SetNull)
+
+  @@index([status, expiresAt])
+}
+
+model WatchProgress {
+  id           String   @id @default(cuid())
+  userId       String
+  sourceId     String
+  contentUrl   String
+  contentId    String?
+  contentKind  String?
+  title        String?
+  imageUrl     String?
+  episodeLabel String?
+  positionMs   BigInt
+  durationMs   BigInt?
+  completed    Boolean  @default(false)
+  updatedAt    DateTime @updatedAt
+  createdAt    DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, sourceId, contentUrl])
+  @@index([userId, updatedAt])
+}
+
+model AppRelease {
+  id             String        @id @default(cuid())
+  platform       DevicePlatform
+  channel        ReleaseChannel @default(STABLE)
+  policy         ReleasePolicy  @default(OPTIONAL)
+  version        String
+  tag            String
+  notes          String         @default("")
+  objectKey      String
+  fileName       String
+  sha256         String
+  sizeBytes      BigInt
+  architecture   String?
+  minimumVersion String?
+  published      Boolean       @default(false)
+  publishedAt    DateTime?
+  createdAt      DateTime      @default(now())
+
+  @@unique([platform, channel, version, architecture])
+  @@index([platform, channel, published, publishedAt])
+}
+
+model SupportTicket {
+  id        String         @id @default(cuid())
+  accountId String
+  userId    String
+  deviceId  String?
+  subject   String
+  category  String
+  status    TicketStatus   @default(OPEN)
+  priority  TicketPriority @default(NORMAL)
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+
+  account  Account          @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  user     User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messages SupportMessage[]
+
+  @@index([accountId, status])
+  @@index([userId, status])
+}
+
+model SupportMessage {
+  id         String   @id @default(cuid())
+  ticketId   String
+  senderId   String?
+  senderRole String
+  message    String
+  createdAt  DateTime @default(now())
+
+  ticket SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  @@index([ticketId, createdAt])
+}
+
+model AuditLog {
+  id          String   @id @default(cuid())
+  actorUserId String?
+  accountId   String?
+  action      String
+  targetType  String
+  targetId    String?
+  metadata    Json?
+  ipAddress   String?
+  createdAt   DateTime @default(now())
+
+  actor   User?    @relation("AuditActor", fields: [actorUserId], references: [id], onDelete: SetNull)
+  account Account? @relation(fields: [accountId], references: [id], onDelete: SetNull)
+
+  @@index([accountId, createdAt])
+  @@index([actorUserId, createdAt])
+}
