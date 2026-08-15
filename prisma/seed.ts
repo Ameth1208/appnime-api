@@ -1,4 +1,5 @@
-import { BillingInterval, BillingMode, PrismaClient } from '@prisma/client';
+import { BillingInterval, BillingMode, PrismaClient, SubscriptionStatus } from '@prisma/client';
+import { hash } from 'argon2';
 
 const prisma = new PrismaClient();
 
@@ -87,6 +88,63 @@ async function main() {
 
   for (const plan of plans) {
     await prisma.plan.upsert({ where: { code: plan.code }, update: plan, create: plan });
+  }
+
+  // Create Initial Super Admin User
+  const adminEmail = process.env.INITIAL_ADMIN_EMAIL || 'admin@appnime.com';
+  const adminPassword = process.env.INITIAL_ADMIN_PASSWORD || 'Admin123456!';
+
+  const existingAdmin = await prisma.user.findUnique({ where: { email: adminEmail } });
+
+  if (!existingAdmin) {
+    const passwordHash = await hash(adminPassword);
+    const adminUser = await prisma.user.create({
+      data: {
+        email: adminEmail,
+        displayName: 'Super Admin',
+        passwordHash,
+        isAdmin: true,
+        status: 'ACTIVE',
+        emailVerifiedAt: new Date(),
+      },
+    });
+
+    const account = await prisma.account.create({
+      data: {
+        ownerUserId: adminUser.id,
+        status: 'ACTIVE',
+      },
+    });
+
+    await prisma.accountMember.create({
+      data: {
+        accountId: account.id,
+        userId: adminUser.id,
+        role: 'OWNER',
+        status: 'ACTIVE',
+      },
+    });
+
+    const familyLifetimePlan = await prisma.plan.findUnique({ where: { code: 'FAMILY_LIFETIME_INTERNAL' } });
+    if (familyLifetimePlan) {
+      await prisma.subscription.create({
+        data: {
+          accountId: account.id,
+          planId: familyLifetimePlan.id,
+          status: SubscriptionStatus.ACTIVE,
+          billingMode: BillingMode.PERMANENT,
+          provider: 'MANUAL',
+        },
+      });
+    }
+
+    console.log(`[Seed] Super Admin user created successfully: ${adminEmail}`);
+  } else {
+    await prisma.user.update({
+      where: { id: existingAdmin.id },
+      data: { isAdmin: true },
+    });
+    console.log(`[Seed] Existing user ${adminEmail} updated to Super Admin.`);
   }
 }
 

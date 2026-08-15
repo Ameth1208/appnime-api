@@ -4,7 +4,6 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  url      = env("DATABASE_URL")
 }
 
 enum UserStatus {
@@ -150,28 +149,28 @@ enum TicketPriority {
 }
 
 model User {
-  id              String       @id @default(cuid())
-  email           String       @unique
+  id              String     @id @default(cuid())
+  email           String     @unique
   passwordHash    String
   displayName     String?
   avatarObjectKey String?
-  status          UserStatus   @default(ACTIVE)
-  isAdmin         Boolean      @default(false)
+  status          UserStatus @default(ACTIVE)
+  isAdmin         Boolean    @default(false)
   emailVerifiedAt DateTime?
-  createdAt       DateTime     @default(now())
-  updatedAt       DateTime     @updatedAt
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
 
-  ownedAccounts       Account[]        @relation("AccountOwner")
-  memberships         AccountMember[]
-  devices             Device[]
-  sessions            Session[]
-  usageSessions       UsageSession[]
-  history             WatchProgress[]
-  tickets             SupportTicket[]
-  auditLogs           AuditLog[]       @relation("AuditActor")
-  invitationsSent     Invitation[]     @relation("InvitationCreator")
+  ownedAccounts         Account[]              @relation("AccountOwner")
+  memberships           AccountMember[]
+  devices               Device[]
+  sessions              Session[]
+  usageSessions         UsageSession[]
+  history               WatchProgress[]
+  tickets               SupportTicket[]
+  auditLogs             AuditLog[]             @relation("AuditActor")
+  invitationsSent       Invitation[]           @relation("InvitationCreator")
   activationRedemptions ActivationRedemption[]
-  approvedDeviceLinks DeviceLink[]     @relation("DeviceLinkApprover")
+  approvedDeviceLinks   DeviceLink[]           @relation("DeviceLinkApprover")
 }
 
 model Account {
@@ -181,7 +180,7 @@ model Account {
   createdAt   DateTime      @default(now())
   updatedAt   DateTime      @updatedAt
 
-  owner         User                 @relation("AccountOwner", fields: [ownerUserId], references: [id])
+  owner         User                   @relation("AccountOwner", fields: [ownerUserId], references: [id])
   members       AccountMember[]
   subscriptions Subscription[]
   payments      Payment[]
@@ -233,7 +232,7 @@ model Plan {
   createdAt                 DateTime        @default(now())
   updatedAt                 DateTime        @updatedAt
 
-  subscriptions  Subscription[]
+  subscriptions   Subscription[]
   activationCodes ActivationCode[]
 }
 
@@ -271,13 +270,13 @@ model Payment {
   status            PaymentStatus       @default(PENDING)
   metadata          Json?
   paidAt            DateTime?
-  createdAt         DateTime             @default(now())
+  createdAt         DateTime            @default(now())
 
   account      Account       @relation(fields: [accountId], references: [id], onDelete: Cascade)
   subscription Subscription? @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
 
-  @@index([accountId, createdAt])
   @@unique([provider, providerPaymentId])
+  @@index([accountId, createdAt])
 }
 
 model Device {
@@ -304,7 +303,7 @@ model Device {
   sessions      Session[]
   usageSessions UsageSession[]
   leases        AccessLease[]
-  deviceLinks   DeviceLink[]    @relation("DeviceLinkDevice")
+  deviceLinks   DeviceLink[]   @relation("DeviceLinkDevice")
 
   @@unique([accountId, installationId])
   @@index([accountId, status])
@@ -324,14 +323,14 @@ model DeviceChange {
 }
 
 model Session {
-  id               String   @id @default(cuid())
+  id               String    @id @default(cuid())
   userId           String
   deviceId         String?
   refreshTokenHash String
   expiresAt        DateTime
   revokedAt        DateTime?
-  createdAt        DateTime @default(now())
-  lastUsedAt       DateTime @default(now())
+  createdAt        DateTime  @default(now())
+  lastUsedAt       DateTime  @default(now())
 
   user   User    @relation(fields: [userId], references: [id], onDelete: Cascade)
   device Device? @relation(fields: [deviceId], references: [id], onDelete: SetNull)
@@ -358,15 +357,15 @@ model UsageSession {
 }
 
 model AccessLease {
-  id                     String   @id @default(cuid())
+  id                     String    @id @default(cuid())
   accountId              String
   userId                 String
   deviceId               String
-  issuedAt               DateTime @default(now())
+  issuedAt               DateTime  @default(now())
   refreshAfter           DateTime
   subscriptionValidUntil DateTime?
   offlineGraceUntil      DateTime
-  tokenId                String   @unique
+  tokenId                String    @unique
 
   account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
   device  Device  @relation(fields: [deviceId], references: [id], onDelete: Cascade)
@@ -376,15 +375,15 @@ model AccessLease {
 }
 
 model Invitation {
-  id          String   @id @default(cuid())
+  id          String    @id @default(cuid())
   accountId   String
   email       String
-  tokenHash   String   @unique
+  tokenHash   String    @unique
   createdById String
   expiresAt   DateTime
   acceptedAt  DateTime?
   revokedAt   DateTime?
-  createdAt   DateTime @default(now())
+  createdAt   DateTime  @default(now())
 
   account   Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
   createdBy User    @relation("InvitationCreator", fields: [createdById], references: [id])
@@ -393,33 +392,33 @@ model Invitation {
 }
 
 model ActivationCodeBatch {
-  id           String   @id @default(cuid())
-  name         String
-  campaign     String?
-  reseller     String?
-  notes        String?
-  createdById  String?
-  createdAt    DateTime @default(now())
-  codes        ActivationCode[]
+  id          String           @id @default(cuid())
+  name        String
+  campaign    String?
+  reseller    String?
+  notes       String?
+  createdById String?
+  createdAt   DateTime         @default(now())
+  codes       ActivationCode[]
 }
 
 model ActivationCode {
-  id                String                 @id @default(cuid())
-  batchId           String?
-  planId            String
-  codeHash          String                 @unique
-  codePrefix        String
-  kind              ActivationCodeKind
-  status            ActivationCodeStatus   @default(AVAILABLE)
-  durationUnit      ActivationDurationUnit
-  durationValue     Int                    @default(1)
+  id                  String                 @id @default(cuid())
+  batchId             String?
+  planId              String
+  codeHash            String                 @unique
+  codePrefix          String
+  kind                ActivationCodeKind
+  status              ActivationCodeStatus   @default(AVAILABLE)
+  durationUnit        ActivationDurationUnit
+  durationValue       Int                    @default(1)
   redemptionExpiresAt DateTime?
-  redeemedAt        DateTime?
-  createdAt         DateTime               @default(now())
+  redeemedAt          DateTime?
+  createdAt           DateTime               @default(now())
 
-  batch       ActivationCodeBatch? @relation(fields: [batchId], references: [id], onDelete: SetNull)
-  plan        Plan                 @relation(fields: [planId], references: [id])
-  redemption  ActivationRedemption?
+  batch      ActivationCodeBatch?  @relation(fields: [batchId], references: [id], onDelete: SetNull)
+  plan       Plan                  @relation(fields: [planId], references: [id])
+  redemption ActivationRedemption?
 
   @@index([batchId, status])
   @@index([planId, status])
@@ -442,19 +441,19 @@ model ActivationRedemption {
 }
 
 model DeviceLink {
-  id                String           @id @default(cuid())
-  accountId         String?
-  approvedByUserId  String?
-  deviceId          String?
-  codeHash          String           @unique
-  codeHint          String
-  claimSecretHash   String
-  status            DeviceLinkStatus @default(PENDING)
-  devicePayload     Json
-  expiresAt         DateTime
-  approvedAt        DateTime?
-  claimedAt         DateTime?
-  createdAt         DateTime         @default(now())
+  id               String           @id @default(cuid())
+  accountId        String?
+  approvedByUserId String?
+  deviceId         String?
+  codeHash         String           @unique
+  codeHint         String
+  claimSecretHash  String
+  status           DeviceLinkStatus @default(PENDING)
+  devicePayload    Json
+  expiresAt        DateTime
+  approvedAt       DateTime?
+  claimedAt        DateTime?
+  createdAt        DateTime         @default(now())
 
   account        Account? @relation(fields: [accountId], references: [id], onDelete: SetNull)
   approvedByUser User?    @relation("DeviceLinkApprover", fields: [approvedByUserId], references: [id], onDelete: SetNull)
@@ -486,7 +485,7 @@ model WatchProgress {
 }
 
 model AppRelease {
-  id             String        @id @default(cuid())
+  id             String         @id @default(cuid())
   platform       DevicePlatform
   channel        ReleaseChannel @default(STABLE)
   policy         ReleasePolicy  @default(OPTIONAL)
@@ -499,9 +498,9 @@ model AppRelease {
   sizeBytes      BigInt
   architecture   String?
   minimumVersion String?
-  published      Boolean       @default(false)
+  published      Boolean        @default(false)
   publishedAt    DateTime?
-  createdAt      DateTime      @default(now())
+  createdAt      DateTime       @default(now())
 
   @@unique([platform, channel, version, architecture])
   @@index([platform, channel, published, publishedAt])
