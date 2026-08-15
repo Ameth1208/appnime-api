@@ -152,6 +152,63 @@ async function main() {
     });
     console.log(`[Seed] Existing user ${adminEmail} updated to Super Admin.`);
   }
+
+  // Create Initial Demo Standard User
+  const demoEmail = process.env.INITIAL_USER_EMAIL || 'user@appnime.com';
+  const demoPassword = process.env.INITIAL_USER_PASSWORD || 'User123456!';
+
+  const existingDemoUser = await prisma.user.findUnique({ where: { email: demoEmail } });
+
+  if (!existingDemoUser) {
+    const passwordHash = await hash(demoPassword);
+    const demoUser = await prisma.user.create({
+      data: {
+        email: demoEmail,
+        displayName: 'Usuario AppNime',
+        passwordHash,
+        isAdmin: false,
+        status: 'ACTIVE',
+        emailVerifiedAt: new Date(),
+      },
+    });
+
+    const account = await prisma.account.create({
+      data: {
+        ownerUserId: demoUser.id,
+        status: 'ACTIVE',
+      },
+    });
+
+    await prisma.accountMember.create({
+      data: {
+        accountId: account.id,
+        userId: demoUser.id,
+        role: 'OWNER',
+        status: 'ACTIVE',
+      },
+    });
+
+    const individualPlan = await prisma.plan.findUnique({ where: { code: 'INDIVIDUAL_MONTHLY' } });
+    if (individualPlan) {
+      const now = new Date();
+      const nextMonth = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+      await prisma.subscription.create({
+        data: {
+          accountId: account.id,
+          planId: individualPlan.id,
+          status: SubscriptionStatus.ACTIVE,
+          billingMode: BillingMode.AUTOMATIC,
+          provider: 'MANUAL',
+          currentPeriodStart: now,
+          currentPeriodEnd: nextMonth,
+        },
+      });
+    }
+
+    console.log(`[Seed] Standard demo user created successfully: ${demoEmail}`);
+  } else {
+    console.log(`[Seed] Standard demo user ${demoEmail} already exists.`);
+  }
 }
 
 main().finally(() => prisma.$disconnect());
