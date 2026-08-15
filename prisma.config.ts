@@ -7,5 +7,4 @@ export default defineConfig({
   datasource: {
     url: process.env.DATABASE_URL || 'postgresql://appnime:appnime@localhost:5432/appnime?schema=public',
   },
-  seed: 'tsx prisma/seed.ts',
 });
