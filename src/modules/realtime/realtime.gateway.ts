@@ -26,10 +26,11 @@ export class RealtimeGateway {
       const raw = String(socket.handshake.auth?.token ?? socket.handshake.headers.authorization ?? '').replace(/^Bearer\s+/i, '');
       if (!raw) return socket.disconnect(true);
       const principal = await this.jwt.verifyAsync<AuthPrincipal>(raw, { secret: this.config.getOrThrow('JWT_ACCESS_SECRET') });
-      const session = await this.prisma.session.findUnique({ where: { id: principal.sessionId }, include: { user: { select: { status: true } } } });
+      const session = await this.prisma.session.findUnique({ where: { id: principal.sessionId }, include: { user: { select: { status: true, isAdmin: true } } } });
       if (!session || session.revokedAt || session.expiresAt <= new Date() || session.user.status !== 'ACTIVE') return socket.disconnect(true);
       socket.data.principal = principal;
       await socket.join(`user:${principal.sub}`);
+      if (session.user.isAdmin) await socket.join('admin');
       const requestedDeviceId = String(socket.handshake.auth?.deviceId ?? principal.deviceId ?? '');
       if (requestedDeviceId) {
         const device = await this.prisma.device.findFirst({ where: { id: requestedDeviceId, userId: principal.sub, status: 'ACTIVE' } });
@@ -45,4 +46,6 @@ export class RealtimeGateway {
   emitUser(userId: string, event: string, payload: unknown) { this.server.to(`user:${userId}`).emit(event, payload); }
   emitDevice(deviceId: string, event: string, payload: unknown) { this.server.to(`device:${deviceId}`).emit(event, payload); }
   emitAccount(accountId: string, event: string, payload: unknown) { this.server.to(`account:${accountId}`).emit(event, payload); }
+  emitAdmin(event: string, payload: unknown) { this.server.to('admin').emit(event, payload); }
+  broadcast(event: string, payload: unknown) { this.server.emit(event, payload); }
 }

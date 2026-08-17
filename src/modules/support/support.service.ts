@@ -26,6 +26,15 @@ export class SupportService {
       include: { messages: true },
     });
     this.realtime.emitAccount(membership.accountId, 'support.ticket.created', { ticketId: ticket.id });
+    this.realtime.emitAdmin('admin.support.ticket.created', {
+      id: ticket.id,
+      accountId: ticket.accountId,
+      userId: ticket.userId,
+      subject: ticket.subject,
+      category: ticket.category,
+      status: ticket.status,
+      createdAt: ticket.createdAt,
+    });
     return ticket;
   }
 
@@ -43,6 +52,13 @@ export class SupportService {
       data: { ticketId: ticket.id, senderId: userId, senderRole: 'USER', message },
     });
     this.realtime.emitAccount(ticket.accountId, 'support.message', { ticketId, messageId: created.id });
+    this.realtime.emitAdmin('admin.support.message', {
+      id: created.id,
+      ticketId: ticket.id,
+      senderRole: 'USER',
+      message: created.message,
+      createdAt: created.createdAt,
+    });
     return created;
   }
 }

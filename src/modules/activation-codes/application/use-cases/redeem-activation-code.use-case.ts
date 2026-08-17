@@ -36,6 +36,20 @@ export class RedeemActivationCodeUseCase {
       await tx.activationRedemption.create({
         data: { activationCodeId: code.id, accountId: membership.accountId, userId, subscriptionId: subscription.id },
       });
+      if (code.kind !== 'TRIAL') {
+        const plan = await tx.plan.findUniqueOrThrow({ where: { id: code.planId } });
+        await tx.payment.create({
+          data: {
+            accountId: membership.accountId,
+            subscriptionId: subscription.id,
+            amountCents: plan.priceCents,
+            currency: plan.currency,
+            provider: PaymentProviderKind.ACTIVATION_CODE,
+            status: 'PAID',
+            paidAt: new Date(),
+          },
+        });
+      }
       return { ok: true, subscription };
     });
   }

@@ -149,7 +149,7 @@ enum TicketPriority {
 }
 
 model User {
-  id              String     @id @default(cuid())
+  id              String     @id @default(uuid())
   email           String     @unique
   passwordHash    String
   displayName     String?
@@ -166,6 +166,7 @@ model User {
   sessions              Session[]
   usageSessions         UsageSession[]
   history               WatchProgress[]
+  contentLikes          ContentLike[]
   tickets               SupportTicket[]
   auditLogs             AuditLog[]             @relation("AuditActor")
   invitationsSent       Invitation[]           @relation("InvitationCreator")
@@ -174,7 +175,7 @@ model User {
 }
 
 model Account {
-  id          String        @id @default(cuid())
+  id          String        @id @default(uuid())
   ownerUserId String
   status      AccountStatus @default(ACTIVE)
   createdAt   DateTime      @default(now())
@@ -196,7 +197,7 @@ model Account {
 }
 
 model AccountMember {
-  id        String           @id @default(cuid())
+  id        String           @id @default(uuid())
   accountId String
   userId    String
   role      MemberRole       @default(MEMBER)
@@ -213,7 +214,7 @@ model AccountMember {
 }
 
 model Plan {
-  id                        String          @id @default(cuid())
+  id                        String          @id @default(uuid())
   code                      String          @unique
   name                      String
   description               String?
@@ -237,7 +238,7 @@ model Plan {
 }
 
 model Subscription {
-  id                     String              @id @default(cuid())
+  id                     String              @id @default(uuid())
   accountId              String
   planId                 String
   status                 SubscriptionStatus  @default(ACTIVE)
@@ -260,7 +261,7 @@ model Subscription {
 }
 
 model Payment {
-  id                String              @id @default(cuid())
+  id                String              @id @default(uuid())
   accountId         String
   subscriptionId    String?
   amountCents       Int
@@ -280,7 +281,7 @@ model Payment {
 }
 
 model Device {
-  id                    String         @id @default(cuid())
+  id                    String         @id @default(uuid())
   accountId             String
   userId                String
   installationId        String
@@ -311,7 +312,7 @@ model Device {
 }
 
 model DeviceChange {
-  id        String   @id @default(cuid())
+  id        String   @id @default(uuid())
   accountId String
   userId    String
   deviceId  String?
@@ -323,7 +324,7 @@ model DeviceChange {
 }
 
 model Session {
-  id               String    @id @default(cuid())
+  id               String    @id @default(uuid())
   userId           String
   deviceId         String?
   refreshTokenHash String
@@ -340,7 +341,7 @@ model Session {
 }
 
 model UsageSession {
-  id              String             @id @default(cuid())
+  id              String             @id @default(uuid())
   userId          String
   deviceId        String
   status          UsageSessionStatus @default(ACTIVE)
@@ -357,7 +358,7 @@ model UsageSession {
 }
 
 model AccessLease {
-  id                     String    @id @default(cuid())
+  id                     String    @id @default(uuid())
   accountId              String
   userId                 String
   deviceId               String
@@ -375,7 +376,7 @@ model AccessLease {
 }
 
 model Invitation {
-  id          String    @id @default(cuid())
+  id          String    @id @default(uuid())
   accountId   String
   email       String
   tokenHash   String    @unique
@@ -392,7 +393,7 @@ model Invitation {
 }
 
 model ActivationCodeBatch {
-  id          String           @id @default(cuid())
+  id          String           @id @default(uuid())
   name        String
   campaign    String?
   reseller    String?
@@ -403,7 +404,7 @@ model ActivationCodeBatch {
 }
 
 model ActivationCode {
-  id                  String                 @id @default(cuid())
+  id                  String                 @id @default(uuid())
   batchId             String?
   planId              String
   codeHash            String                 @unique
@@ -425,7 +426,7 @@ model ActivationCode {
 }
 
 model ActivationRedemption {
-  id               String   @id @default(cuid())
+  id               String   @id @default(uuid())
   activationCodeId String   @unique
   accountId        String
   userId           String
@@ -441,7 +442,7 @@ model ActivationRedemption {
 }
 
 model DeviceLink {
-  id               String           @id @default(cuid())
+  id               String           @id @default(uuid())
   accountId        String?
   approvedByUserId String?
   deviceId         String?
@@ -463,7 +464,7 @@ model DeviceLink {
 }
 
 model WatchProgress {
-  id           String   @id @default(cuid())
+  id           String   @id @default(uuid())
   userId       String
   sourceId     String
   contentUrl   String
@@ -482,11 +483,26 @@ model WatchProgress {
 
   @@unique([userId, sourceId, contentUrl])
   @@index([userId, updatedAt])
+}model ContentLike {
+  id          String   @id @default(uuid())
+  userId      String
+  sourceId    String
+  contentUrl  String
+  title       String?
+  imageUrl    String?
+  contentKind String?
+  createdAt   DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, sourceId, contentUrl])
+  @@index([userId, createdAt])
+  @@index([createdAt])
 }
 
 model AppRelease {
-  id             String         @id @default(cuid())
-  platform       DevicePlatform
+  id             String         @id @default(uuid())
+  platform       DevicePlatform
   channel        ReleaseChannel @default(STABLE)
   policy         ReleasePolicy  @default(OPTIONAL)
   version        String
@@ -507,7 +523,7 @@ model AppRelease {
 }
 
 model SupportTicket {
-  id        String         @id @default(cuid())
+  id        String         @id @default(uuid())
   accountId String
   userId    String
   deviceId  String?
@@ -527,7 +543,7 @@ model SupportTicket {
 }
 
 model SupportMessage {
-  id         String   @id @default(cuid())
+  id         String   @id @default(uuid())
   ticketId   String
   senderId   String?
   senderRole String
@@ -540,7 +556,7 @@ model SupportMessage {
 }
 
 model AuditLog {
-  id          String   @id @default(cuid())
+  id          String   @id @default(uuid())
   actorUserId String?
   accountId   String?
   action      String
@@ -555,4 +571,34 @@ model AuditLog {
 
   @@index([accountId, createdAt])
   @@index([actorUserId, createdAt])
+}
+
+model TermsVersion {
+  id          String    @id @default(uuid())
+  title       String    @default("Términos y Condiciones")
+  body        String
+  version     Int       @default(1)
+  published   Boolean   @default(false)
+  publishedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([published, publishedAt])
+}
+
+model Promotion {
+  id              String    @id @default(uuid())
+  code            String    @unique
+  title           String
+  description     String?
+  discountPercent Int       @default(0)
+  maxRedemptions  Int?
+  usedCount       Int       @default(0)
+  startsAt        DateTime?
+  expiresAt       DateTime?
+  active          Boolean   @default(true)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([active, expiresAt])
 }

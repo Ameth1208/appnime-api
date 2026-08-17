@@ -3,6 +3,7 @@ import { ConfigModule } from '@nestjs/config';
 import { validateEnv } from './common/config/env.schema';
 import { DatabaseModule } from './common/database/database.module';
 import { StorageModule } from './common/storage/storage.module';
+import { ContentModule } from './modules/content/content.module';
 import { AccountsModule } from './modules/accounts/accounts.module';
 import { ActivationCodesModule } from './modules/activation-codes/activation-codes.module';
 import { AdminModule } from './modules/admin/admin.module';
@@ -12,6 +13,7 @@ import { DevicesModule } from './modules/devices/devices.module';
 import { HealthModule } from './modules/health/health.module';
 import { HistoryModule } from './modules/history/history.module';
 import { LicensingModule } from './modules/licensing/licensing.module';
+import { LikesModule } from './modules/likes/likes.module';
 import { MembersModule } from './modules/members/members.module';
 import { PaymentsModule } from './modules/payments/payments.module';
 import { PlansModule } from './modules/plans/plans.module';
@@ -36,6 +38,7 @@ import { UsersModule } from './modules/users/users.module';
     DevicesModule,
     UsageSessionsModule,
     LicensingModule,
+    LikesModule,
     MembersModule,
     ActivationCodesModule,
     DeviceLinksModule,
@@ -44,6 +47,7 @@ import { UsersModule } from './modules/users/users.module';
     SupportModule,
     RealtimeModule,
     AdminModule,
+    ContentModule,
     HealthModule,
   ],
 })
