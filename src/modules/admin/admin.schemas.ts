@@ -37,7 +37,10 @@ export const subscriptionUpdateSchema = z.object({
   planId: z.string().min(1).optional(),
 });
 export const ticketStatusSchema = z.object({ status: z.enum(['OPEN', 'IN_PROGRESS', 'WAITING_USER', 'RESOLVED', 'CLOSED']) });
-export const adminTicketMessageSchema = z.object({ message: z.string().min(1).max(10_000) });
+export const adminTicketMessageSchema = z.object({
+  message: z.string().min(1).max(10_000),
+  attachments: z.array(z.string()).optional(),
+});
 export const adminCreateUserSchema = z.object({
   email: z.email().transform((value) => value.toLowerCase()),
   password: z.string().min(8).max(128),
@@ -45,3 +48,4 @@ export const adminCreateUserSchema = z.object({
   isAdmin: z.boolean().default(false),
 });
 export const adminSetRoleSchema = z.object({ isAdmin: z.boolean() });
+export const adminChangePasswordSchema = z.object({ password: z.string().min(8).max(128) });

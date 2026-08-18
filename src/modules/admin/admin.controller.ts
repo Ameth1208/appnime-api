@@ -1,5 +1,5 @@
 import { Body, Controller, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
-import { DevicePlatform, DeviceStatus, PaymentProviderKind, PaymentStatus, SubscriptionStatus, UserStatus } from '@prisma/client';
+import { AccountStatus, DevicePlatform, DeviceStatus, PaymentProviderKind, PaymentStatus, Prisma, SubscriptionStatus, UserStatus } from '@prisma/client';
 import { PrismaService } from '../../common/database/prisma.service';
 import { ZodValidationPipe } from '../../common/http/zod-validation.pipe';
 import { AuthPrincipal, CurrentUser } from '../../common/security/current-user.decorator';
@@ -11,7 +11,7 @@ import { AdminInviteMemberUseCase } from '../members/application/use-cases/admin
 import { ManualPaymentService } from '../payments/manual-payment.service';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
 import { AdminGuard } from './admin.guard';
-import { accountStatusSchema, adminCreateUserSchema, adminDeviceLinkSchema, adminInviteSchema, adminNotifySchema, adminSetRoleSchema, adminTicketMessageSchema, announcementSchema, manualPaymentSchema, paymentStatusSchema, promotionCreateSchema, promotionUpdateSchema, subscriptionUpdateSchema, termsCreateSchema, ticketStatusSchema } from './admin.schemas';
+import { accountStatusSchema, adminChangePasswordSchema, adminCreateUserSchema, adminDeviceLinkSchema, adminInviteSchema, adminNotifySchema, adminSetRoleSchema, adminTicketMessageSchema, announcementSchema, manualPaymentSchema, paymentStatusSchema, promotionCreateSchema, promotionUpdateSchema, subscriptionUpdateSchema, termsCreateSchema, ticketStatusSchema } from './admin.schemas';
 
 @Controller('v1/admin')
 @UseGuards(JwtAuthGuard, AdminGuard)
@@ -26,18 +26,31 @@ export class AdminController {
   ) {}
 
   @Get('accounts')
-  accounts(@Query('q') q?: string) {
-    return this.prisma.account.findMany({
-      where: q ? { OR: [{ owner: { email: { contains: q, mode: 'insensitive' } } }, { id: { contains: q } }] } : undefined,
-      include: {
-        owner: { select: { id: true, email: true, displayName: true } },
-        subscriptions: { include: { plan: true }, orderBy: { createdAt: 'desc' }, take: 1 },
-        payments: { orderBy: { createdAt: 'desc' }, take: 1 },
-        _count: { select: { members: true, devices: true } },
-      },
-      take: 100,
-      orderBy: { createdAt: 'desc' },
-    });
+  accounts(
+    @Query('q') q?: string,
+    @Query('status') status?: string,
+    @Query('page') page?: string,
+    @Query('pageSize') pageSize = '25',
+  ) {
+    const where: Prisma.AccountWhereInput = {
+      ...(q ? { OR: [{ owner: { email: { contains: q, mode: 'insensitive' } } }, { id: { contains: q } }] } : {}),
+      ...(status && status !== 'ALL' ? { status: status as AccountStatus } : {}),
+    };
+    const include = {
+      owner: { select: { id: true, email: true, displayName: true } },
+      subscriptions: { include: { plan: true }, orderBy: { createdAt: 'desc' }, take: 1 },
+      payments: { orderBy: { createdAt: 'desc' }, take: 1 },
+      _count: { select: { members: true, devices: true } },
+    } as const;
+    if (!page) {
+      return this.prisma.account.findMany({ where, include, take: 100, orderBy: { createdAt: 'desc' } });
+    }
+    const current = Math.max(1, Number(page) || 1);
+    const size = Math.min(100, Math.max(1, Number(pageSize) || 25));
+    return this.prisma.$transaction([
+      this.prisma.account.count({ where }),
+      this.prisma.account.findMany({ where, include, orderBy: { createdAt: 'desc' }, skip: (current - 1) * size, take: size }),
+    ]).then(([total, data]) => ({ data, total, page: current, pageSize: size }));
   }
 
   @Get('accounts/:id')
@@ -54,6 +67,36 @@ export class AdminController {
         _count: { select: { members: true, devices: true } },
       },
     });
+  }
+
+  @Get('subscriptions')
+  async subscriptions(
+    @Query('status') status?: string,
+    @Query('q') q?: string,
+    @Query('page') page = '1',
+    @Query('pageSize') pageSize = '25',
+  ) {
+    const where: Prisma.SubscriptionWhereInput = {
+      ...(status && status !== 'ALL' ? { status: status as SubscriptionStatus } : {}),
+      ...(q ? { account: { owner: { email: { contains: q, mode: 'insensitive' } } } } : {}),
+    };
+    const include = {
+      plan: true,
+      account: { select: { id: true, owner: { select: { id: true, email: true, displayName: true } } } },
+    } as const;
+    const current = Math.max(1, Number(page) || 1);
+    const size = Math.min(100, Math.max(1, Number(pageSize) || 25));
+    const [total, data] = await this.prisma.$transaction([
+      this.prisma.subscription.count({ where }),
+      this.prisma.subscription.findMany({
+        where,
+        include,
+        orderBy: { createdAt: 'desc' },
+        skip: (current - 1) * size,
+        take: size,
+      }),
+    ]);
+    return { data, total, page: current, pageSize: size };
   }
 
   @Post('users')
@@ -80,6 +123,26 @@ export class AdminController {
       data: { actorUserId: admin.sub, action: 'ADMIN_USER_CREATED', targetType: 'User', targetId: user.id, metadata: { email: user.email, isAdmin: user.isAdmin } },
     });
     return user;
+  }
+
+  @Patch('users/:id/password')
+  async changePassword(
+    @CurrentUser() admin: AuthPrincipal,
+    @Param('id') id: string,
+    @Body(new ZodValidationPipe(adminChangePasswordSchema)) body: { password: string },
+  ) {
+    const { hash } = await import('argon2');
+    const passwordHash = await hash(body.password);
+    await this.prisma.user.update({ where: { id }, data: { passwordHash } });
+    // Invalidar sesiones del usuario (salvo la propia si es el mismo admin).
+    await this.prisma.session.updateMany({
+      where: { userId: id, revokedAt: null, ...(id === admin.sub ? { id: { not: admin.sessionId } } : {}) },
+      data: { revokedAt: new Date() },
+    });
+    await this.prisma.auditLog.create({
+      data: { actorUserId: admin.sub, action: 'USER_PASSWORD_CHANGED', targetType: 'User', targetId: id, metadata: { byAdmin: admin.sub !== id } },
+    });
+    return { ok: true };
   }
 
   @Patch('users/:id/role')
@@ -206,7 +269,8 @@ export class AdminController {
     @Body(new ZodValidationPipe(ticketStatusSchema)) body: { status: 'OPEN' | 'IN_PROGRESS' | 'WAITING_USER' | 'RESOLVED' | 'CLOSED' },
   ) {
     const ticket = await this.prisma.supportTicket.update({ where: { id }, data: { status: body.status } });
-    this.realtime.emitAdmin('admin.support.ticket.updated', { id: ticket.id, status: ticket.status });
+    this.realtime.emitAdmin('admin.support.ticket.updated', { id: ticket.id, ticketId: ticket.id, status: ticket.status });
+    this.realtime.emitUser(ticket.userId, 'support.ticket.updated', { id: ticket.id, ticketId: ticket.id, status: ticket.status });
     return ticket;
   }
 
@@ -214,18 +278,28 @@ export class AdminController {
   async supportMessage(
     @CurrentUser() admin: AuthPrincipal,
     @Param('id') id: string,
-    @Body(new ZodValidationPipe(adminTicketMessageSchema)) body: { message: string },
+    @Body(new ZodValidationPipe(adminTicketMessageSchema)) body: { message: string; attachments?: string[] },
   ) {
     const ticket = await this.prisma.supportTicket.findUniqueOrThrow({ where: { id } });
-    const message = await this.prisma.supportMessage.create({ data: { ticketId: id, senderId: admin.sub, senderRole: 'ADMIN', message: body.message } });
-    this.realtime.emitUser(ticket.userId, 'support.message', { ticketId: id, messageId: message.id });
-    this.realtime.emitAdmin('admin.support.message', {
+    const message = await this.prisma.supportMessage.create({
+      data: {
+        ticketId: id,
+        senderId: admin.sub,
+        senderRole: 'ADMIN',
+        message: body.message,
+        attachments: body.attachments ?? [],
+      },
+    });
+    const payload = {
       id: message.id,
       ticketId: id,
       senderRole: 'ADMIN',
       message: message.message,
+      attachments: message.attachments,
       createdAt: message.createdAt,
-    });
+    };
+    this.realtime.emitUser(ticket.userId, 'support.message', payload);
+    this.realtime.emitAdmin('admin.support.message', payload);
     return message;
   }
 
@@ -251,7 +325,12 @@ export class AdminController {
         orderBy: { joinedAt: 'desc' },
       }),
       this.prisma.account.findMany({ where: { ownerUserId: id }, orderBy: { createdAt: 'desc' } }),
-      this.prisma.device.findMany({ where: { userId: id }, orderBy: { lastSeenAt: 'desc' }, take: 50 }),
+      this.prisma.device.findMany({
+        where: { userId: id },
+        include: { account: { select: { id: true, owner: { select: { email: true, displayName: true } } } } },
+        orderBy: { lastSeenAt: 'desc' },
+        take: 50,
+      }),
       this.prisma.invitation.findMany({ where: { createdById: id }, orderBy: { createdAt: 'desc' }, take: 50 }),
       this.prisma.invitation.findMany({ where: { email: user.email }, orderBy: { createdAt: 'desc' }, take: 50 }),
       this.prisma.contentLike.findMany({ where: { userId: id }, orderBy: { createdAt: 'desc' }, take: 50 }),
@@ -301,24 +380,36 @@ export class AdminController {
   }
 
   @Get('users')
-  users(@Query('q') q?: string, @Query('status') status?: string) {
-    return this.prisma.user.findMany({
-      where: {
-        ...(q ? { OR: [{ email: { contains: q, mode: 'insensitive' } }, { displayName: { contains: q, mode: 'insensitive' } }, { id: { contains: q } }] } : {}),
-        ...(status ? { status: status as UserStatus } : {}),
-      },
-      select: {
-        id: true,
-        email: true,
-        displayName: true,
-        status: true,
-        isAdmin: true,
-        createdAt: true,
-        _count: { select: { memberships: true, ownedAccounts: true, devices: true } },
-      },
-      orderBy: { createdAt: 'desc' },
-      take: 200,
-    });
+  users(
+    @Query('q') q?: string,
+    @Query('status') status?: string,
+    @Query('isAdmin') isAdmin?: string,
+    @Query('page') page?: string,
+    @Query('pageSize') pageSize = '25',
+  ) {
+    const where: Prisma.UserWhereInput = {
+      ...(q ? { OR: [{ email: { contains: q, mode: 'insensitive' } }, { displayName: { contains: q, mode: 'insensitive' } }, { id: { contains: q } }] } : {}),
+      ...(status ? { status: status as UserStatus } : {}),
+      ...(isAdmin !== undefined ? { isAdmin: isAdmin === 'true' } : {}),
+    };
+    const select = {
+      id: true,
+      email: true,
+      displayName: true,
+      status: true,
+      isAdmin: true,
+      createdAt: true,
+      _count: { select: { memberships: true, ownedAccounts: true, devices: true } },
+    } as const;
+    if (!page) {
+      return this.prisma.user.findMany({ where, select, orderBy: { createdAt: 'desc' }, take: 200 });
+    }
+    const current = Math.max(1, Number(page) || 1);
+    const size = Math.min(100, Math.max(1, Number(pageSize) || 25));
+    return this.prisma.$transaction([
+      this.prisma.user.count({ where }),
+      this.prisma.user.findMany({ where, select, orderBy: { createdAt: 'desc' }, skip: (current - 1) * size, take: size }),
+    ]).then(([total, data]) => ({ data, total, page: current, pageSize: size }));
   }
 
   @Patch('subscriptions/:id')
@@ -355,19 +446,30 @@ export class AdminController {
   }
 
   @Get('devices')
-  devices(@Query('q') q?: string, @Query('platform') platform?: string, @Query('status') status?: string) {
-    return this.prisma.device.findMany({
-      where: {
-        ...(q ? { OR: [{ deviceName: { contains: q, mode: 'insensitive' } }, { brand: { contains: q, mode: 'insensitive' } }, { model: { contains: q, mode: 'insensitive' } }, { id: { contains: q } }] } : {}),
-        ...(platform ? { platform: platform as DevicePlatform } : {}),
-        ...(status ? { status: status as DeviceStatus } : {}),
-      },
-      include: {
-        account: { select: { owner: { select: { email: true, displayName: true } } } },
-      },
-      orderBy: { lastSeenAt: 'desc' },
-      take: 200,
-    });
+  devices(
+    @Query('q') q?: string,
+    @Query('platform') platform?: string,
+    @Query('status') status?: string,
+    @Query('page') page?: string,
+    @Query('pageSize') pageSize = '25',
+  ) {
+    const where: Prisma.DeviceWhereInput = {
+      ...(q ? { OR: [{ deviceName: { contains: q, mode: 'insensitive' } }, { brand: { contains: q, mode: 'insensitive' } }, { model: { contains: q, mode: 'insensitive' } }, { id: { contains: q } }] } : {}),
+      ...(platform ? { platform: platform as DevicePlatform } : {}),
+      ...(status ? { status: status as DeviceStatus } : {}),
+    };
+    const include = {
+      account: { select: { owner: { select: { email: true, displayName: true } } } },
+    } as const;
+    if (!page) {
+      return this.prisma.device.findMany({ where, include, orderBy: { lastSeenAt: 'desc' }, take: 200 });
+    }
+    const current = Math.max(1, Number(page) || 1);
+    const size = Math.min(100, Math.max(1, Number(pageSize) || 25));
+    return this.prisma.$transaction([
+      this.prisma.device.count({ where }),
+      this.prisma.device.findMany({ where, include, orderBy: { lastSeenAt: 'desc' }, skip: (current - 1) * size, take: size }),
+    ]).then(([total, data]) => ({ data, total, page: current, pageSize: size }));
   }
 
   @Get('payments')

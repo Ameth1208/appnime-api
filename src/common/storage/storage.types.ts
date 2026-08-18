@@ -1,4 +1,4 @@
-export type StorageNamespace = 'avatars' | 'releases';
+export type StorageNamespace = 'avatars' | 'releases' | 'support';
 export type StoredObject = { objectKey: string; sizeBytes: number; contentType: string; fileName: string };
 export type PutObjectInput = { namespace: StorageNamespace; fileName: string; contentType: string; buffer: Buffer };
 

@@ -21,11 +21,18 @@ export class SupportService {
         deviceId: input.deviceId,
         subject: input.subject,
         category: input.category,
-        messages: { create: { senderId: userId, senderRole: 'USER', message: input.message } },
+        messages: {
+          create: {
+            senderId: userId,
+            senderRole: 'USER',
+            message: input.message,
+            attachments: input.attachments ?? [],
+          },
+        },
       },
       include: { messages: true },
     });
-    this.realtime.emitAccount(membership.accountId, 'support.ticket.created', { ticketId: ticket.id });
+    this.realtime.emitAccount(membership.accountId, 'support.ticket.created', { ticketId: ticket.id, ticket });
     this.realtime.emitAdmin('admin.support.ticket.created', {
       id: ticket.id,
       accountId: ticket.accountId,
@@ -46,19 +53,27 @@ export class SupportService {
     });
   }
 
-  async message(userId: string, ticketId: string, message: string) {
+  async message(userId: string, ticketId: string, message: string, attachments?: string[]) {
     const ticket = await this.prisma.supportTicket.findFirstOrThrow({ where: { id: ticketId, userId } });
     const created = await this.prisma.supportMessage.create({
-      data: { ticketId: ticket.id, senderId: userId, senderRole: 'USER', message },
+      data: {
+        ticketId: ticket.id,
+        senderId: userId,
+        senderRole: 'USER',
+        message,
+        attachments: attachments ?? [],
+      },
     });
-    this.realtime.emitAccount(ticket.accountId, 'support.message', { ticketId, messageId: created.id });
-    this.realtime.emitAdmin('admin.support.message', {
+    const payload = {
       id: created.id,
       ticketId: ticket.id,
       senderRole: 'USER',
       message: created.message,
+      attachments: created.attachments,
       createdAt: created.createdAt,
-    });
+    };
+    this.realtime.emitAccount(ticket.accountId, 'support.message', payload);
+    this.realtime.emitAdmin('admin.support.message', payload);
     return created;
   }
 }

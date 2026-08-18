@@ -5,7 +5,11 @@ export const createTicketSchema = z.object({
   category: z.string().min(2).max(80),
   deviceId: z.string().optional(),
   message: z.string().min(1).max(10_000),
+  attachments: z.array(z.string()).optional(),
 });
 
-export const messageSchema = z.object({ message: z.string().min(1).max(10_000) });
+export const messageSchema = z.object({
+  message: z.string().min(1).max(10_000),
+  attachments: z.array(z.string()).optional(),
+});
 export type CreateTicketInput = z.infer<typeof createTicketSchema>;

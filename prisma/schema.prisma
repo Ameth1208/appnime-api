@@ -543,12 +543,13 @@ model SupportTicket {
 }
 
 model SupportMessage {
-  id         String   @id @default(uuid())
-  ticketId   String
-  senderId   String?
-  senderRole String
-  message    String
-  createdAt  DateTime @default(now())
+  id          String   @id @default(uuid())
+  ticketId    String
+  senderId    String?
+  senderRole  String
+  message     String
+  attachments String[] @default([])
+  createdAt   DateTime @default(now())
 
   ticket SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
 
