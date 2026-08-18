@@ -31,11 +31,24 @@ export class GenerateActivationCodesUseCase {
             kind: input.kind,
             durationUnit: input.kind === 'LIFETIME' ? 'LIFETIME' : input.durationUnit,
             durationValue: input.kind === 'LIFETIME' ? 1 : input.durationValue,
+            valueCents: input.kind === 'TRIAL' || input.kind === 'COMPLIMENTARY' ? 0 : input.valueCents,
             redemptionExpiresAt: input.redemptionExpiresAt,
           })),
         },
       },
+      include: { _count: { select: { codes: true } } },
     });
-    return { batchId: batch.id, codes: plaintextCodes };
+    // Resolver nombre del creador para el audit trail.
+    const creator = adminUserId
+      ? await this.prisma.user.findUnique({ where: { id: adminUserId }, select: { email: true, displayName: true } })
+      : null;
+    return {
+      batchId: batch.id,
+      codes: plaintextCodes,
+      batchName: batch.name,
+      createdBy: creator?.displayName ?? creator?.email ?? 'Unknown',
+      totalCodes: batch._count.codes,
+      valueCents: input.valueCents,
+    };
   }
 }

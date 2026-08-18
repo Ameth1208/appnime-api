@@ -9,6 +9,7 @@ export const generateCodesSchema = z.object({
   kind: z.enum(['TRIAL', 'PREPAID', 'COMPLIMENTARY', 'LIFETIME']),
   durationUnit: z.enum(['DAY', 'MONTH', 'YEAR', 'LIFETIME']),
   durationValue: z.number().int().positive().max(120).default(1),
+  valueCents: z.number().int().min(0).default(0),
   quantity: z.number().int().positive().max(1000),
   redemptionExpiresAt: z.coerce.date().optional(),
 });

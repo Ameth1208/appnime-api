@@ -6,12 +6,12 @@ import { MembersModule } from '../members/members.module';
 import { PaymentsModule } from '../payments/payments.module';
 import { RealtimeModule } from '../realtime/realtime.module';
 import { AdminController } from './admin.controller';
-import { AdminGuard } from './admin.guard';
+import { AdminGuard, SuperAdminGuard } from './admin.guard';
 
 @Module({
   imports: [AuthModule, PaymentsModule, ActivationCodesModule, RealtimeModule, MembersModule, DeviceLinksModule],
   controllers: [AdminController],
-  providers: [AdminGuard],
-  exports: [AdminGuard],
+  providers: [AdminGuard, SuperAdminGuard],
+  exports: [AdminGuard, SuperAdminGuard],
 })
 export class AdminModule {}

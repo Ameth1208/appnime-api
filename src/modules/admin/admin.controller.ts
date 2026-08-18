@@ -10,7 +10,7 @@ import { AdminDeviceLinkUseCase } from '../device-links/application/use-cases/ad
 import { AdminInviteMemberUseCase } from '../members/application/use-cases/admin-invite-member.use-case';
 import { ManualPaymentService } from '../payments/manual-payment.service';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
-import { AdminGuard } from './admin.guard';
+import { AdminGuard, SuperAdminGuard } from './admin.guard';
 import { accountStatusSchema, adminChangePasswordSchema, adminCreateUserSchema, adminDeviceLinkSchema, adminInviteSchema, adminNotifySchema, adminSetRoleSchema, adminTicketMessageSchema, announcementSchema, manualPaymentSchema, paymentStatusSchema, promotionCreateSchema, promotionUpdateSchema, subscriptionUpdateSchema, termsCreateSchema, ticketStatusSchema } from './admin.schemas';
 
 @Controller('v1/admin')
@@ -248,9 +248,81 @@ export class AdminController {
     return result;
   }
 
+  @Get('activation-code-batches')
+  async activationCodeBatches(
+    @Query('page') page = '1',
+    @Query('pageSize') pageSize = '25',
+  ) {
+    const current = Math.max(1, Number(page) || 1);
+    const size = Math.min(100, Math.max(1, Number(pageSize) || 25));
+    const [total, data] = await this.prisma.$transaction([
+      this.prisma.activationCodeBatch.count(),
+      this.prisma.activationCodeBatch.findMany({
+        orderBy: { createdAt: 'desc' },
+        skip: (current - 1) * size,
+        take: size,
+        include: {
+          _count: { select: { codes: true } },
+          codes: {
+            select: { valueCents: true, status: true, kind: true },
+          },
+        },
+      }),
+    ]);
+    // Enriquecer con info del creador
+    const creatorIds = [...new Set(data.map((b) => b.createdById).filter(Boolean))];
+    const creators = creatorIds.length
+      ? await this.prisma.user.findMany({
+          where: { id: { in: creatorIds as string[] } },
+          select: { id: true, email: true, displayName: true },
+        })
+      : [];
+    const creatorMap = new Map(creators.map((c) => [c.id, c]));
+    return {
+      total,
+      page: current,
+      pageSize: size,
+      data: data.map((batch) => {
+        const creator = batch.createdById ? creatorMap.get(batch.createdById) : null;
+        const totalValueCents = batch.codes.reduce((sum, c) => sum + c.valueCents, 0);
+        const redeemedCount = batch.codes.filter((c) => c.status === 'REDEEMED').length;
+        return {
+          id: batch.id,
+          name: batch.name,
+          campaign: batch.campaign,
+          reseller: batch.reseller,
+          notes: batch.notes,
+          createdAt: batch.createdAt,
+          totalCodes: batch._count.codes,
+          redeemedCodes: redeemedCount,
+          totalValueCents,
+          createdBy: creator?.displayName ?? creator?.email ?? null,
+          createdById: batch.createdById,
+        };
+      }),
+    };
+  }
+
   @Post('activation-code-batches')
-  activationCodes(@CurrentUser() admin: AuthPrincipal, @Body(new ZodValidationPipe(generateCodesSchema)) body: GenerateCodesInput) {
-    return this.generateCodes.execute(admin.sub, body);
+  @UseGuards(SuperAdminGuard)
+  async activationCodes(@CurrentUser() admin: AuthPrincipal, @Body(new ZodValidationPipe(generateCodesSchema)) body: GenerateCodesInput) {
+    const result = await this.generateCodes.execute(admin.sub, body);
+    await this.prisma.auditLog.create({
+      data: {
+        actorUserId: admin.sub,
+        action: 'ACTIVATION_CODES_GENERATED',
+        targetType: 'ActivationCodeBatch',
+        targetId: result.batchId,
+        metadata: {
+          name: body.name,
+          planId: body.planId,
+          kind: body.kind,
+          quantity: body.quantity,
+          campaign: body.campaign,
+        },
+      },
+    });
+    return result;
   }
 
   @Get('support/tickets')

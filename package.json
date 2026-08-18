@@ -17,7 +17,7 @@
     "db:migrate": "prisma migrate dev",
     "db:deploy": "prisma migrate deploy",
     "db:studio": "prisma studio",
-    "seed": "tsx prisma/seed.ts",
+    "db:seed": "tsx prisma/seed.ts",
     "seed:plans": "tsx prisma/seeds/plans.seed.ts",
     "seed:users": "tsx prisma/seeds/users.seed.ts",
     "test": "jest --runInBand",
