@@ -12,7 +12,8 @@ import type { AuthPrincipal } from '../../common/security/current-user.decorator
   cors: {
     credentials: true,
     origin: (origin, callback) => {
-      const allowed = String(process.env.CORS_ORIGINS ?? '').split(',').filter(Boolean);
+      const originsStr = process.env.CORS_ORIGINS || 'http://localhost:3000,http://localhost:3001';
+      const allowed = String(originsStr).split(',').filter(Boolean);
       callback(null, !origin || allowed.includes(origin));
     },
   },

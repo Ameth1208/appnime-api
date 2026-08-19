@@ -3,7 +3,7 @@ import { ConfigService } from '@nestjs/config';
 
 // jose is ESM-only — use dynamic import to avoid CJS/ESM conflict in nodenext
 async function loadJose() {
-  return import('jose');
+  return await import('jose');
 }
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';

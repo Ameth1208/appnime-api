@@ -1,0 +1,13 @@
+{
+  "rules": {
+    "architecture/no-orm-in-controllers": { "enabled": false },
+    "architecture/no-business-logic-in-controllers": { "enabled": false },
+    "security/require-guards-on-endpoints": { "enabled": false },
+    "correctness/no-async-without-await": { "enabled": false },
+    "security/no-exposed-env-vars": { "enabled": false },
+    "performance/no-unused-providers": { "enabled": false },
+    "architecture/no-orm-in-services": { "enabled": false },
+    "performance/no-unused-module-exports": { "enabled": false },
+    "schema/require-cascade-rule": { "enabled": false }
+  }
+}

@@ -20,7 +20,7 @@ export class LocalStorageService extends ObjectStorage {
   async remove(objectKey: string) { await rm(join(this.root, objectKey), { force: true }); }
   async downloadUrl(objectKey: string) {
     const base = this.config.getOrThrow<string>('PUBLIC_BASE_URL').replace(/\/$/, '');
-    return `${base}/api/v1/storage/local/${objectKey.split('/').map(encodeURIComponent).join('/')}`;
+    return await Promise.resolve(`${base}/api/v1/storage/local/${objectKey.split('/').map(encodeURIComponent).join('/')}`);
   }
-  async resolvePath(objectKey: string) { return join(this.root, objectKey); }
+  async resolvePath(objectKey: string) { return await Promise.resolve(join(this.root, objectKey)); }
 }

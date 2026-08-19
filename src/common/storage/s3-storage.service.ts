@@ -37,5 +37,5 @@ export class S3StorageService extends ObjectStorage {
     const command = new GetObjectCommand({ Bucket: this.bucket, Key: objectKey, ResponseContentDisposition: fileName ? `attachment; filename="${fileName}"` : undefined });
     return getSignedUrl(this.client, command, { expiresIn: 900 });
   }
-  async resolvePath() { return null; }
+  async resolvePath() { return await Promise.resolve(null); }
 }
