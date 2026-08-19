@@ -42,10 +42,16 @@ export const adminTicketMessageSchema = z.object({
   attachments: z.array(z.string()).optional(),
 });
 export const adminCreateUserSchema = z.object({
-  email: z.email().transform((value) => value.toLowerCase()),
+  email: z.string().email().transform((value) => value.toLowerCase()),
   password: z.string().min(8).max(128),
   displayName: z.string().min(1).max(120).optional(),
   isAdmin: z.boolean().default(false),
+  adminRole: z.enum(['SUPER_ADMIN', 'ADMIN', 'RESELLER']).optional(),
+  permissions: z.array(z.string()).optional(),
 });
-export const adminSetRoleSchema = z.object({ isAdmin: z.boolean() });
+export const adminSetRoleSchema = z.object({
+  isAdmin: z.boolean(),
+  adminRole: z.enum(['SUPER_ADMIN', 'ADMIN', 'RESELLER']).nullable().optional(),
+  permissions: z.array(z.string()).optional(),
+});
 export const adminChangePasswordSchema = z.object({ password: z.string().min(8).max(128) });

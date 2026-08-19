@@ -102,7 +102,15 @@ export class AdminController {
   @Post('users')
   async createUser(
     @CurrentUser() admin: AuthPrincipal,
-    @Body(new ZodValidationPipe(adminCreateUserSchema)) body: { email: string; password: string; displayName?: string; isAdmin: boolean },
+    @Body(new ZodValidationPipe(adminCreateUserSchema))
+    body: {
+      email: string;
+      password: string;
+      displayName?: string;
+      isAdmin: boolean;
+      adminRole?: 'SUPER_ADMIN' | 'ADMIN' | 'RESELLER';
+      permissions?: string[];
+    },
   ) {
     const { hash } = await import('argon2');
     const existing = await this.prisma.user.findUnique({ where: { email: body.email } });
@@ -116,11 +124,28 @@ export class AdminController {
         passwordHash,
         displayName: body.displayName,
         isAdmin: body.isAdmin,
+        adminRole: body.isAdmin ? (body.adminRole ?? 'ADMIN') : null,
+        permissions: body.permissions ?? [],
       },
-      select: { id: true, email: true, displayName: true, status: true, isAdmin: true, createdAt: true },
+      select: {
+        id: true,
+        email: true,
+        displayName: true,
+        status: true,
+        isAdmin: true,
+        adminRole: true,
+        permissions: true,
+        createdAt: true,
+      },
     });
     await this.prisma.auditLog.create({
-      data: { actorUserId: admin.sub, action: 'ADMIN_USER_CREATED', targetType: 'User', targetId: user.id, metadata: { email: user.email, isAdmin: user.isAdmin } },
+      data: {
+        actorUserId: admin.sub,
+        action: 'ADMIN_USER_CREATED',
+        targetType: 'User',
+        targetId: user.id,
+        metadata: { email: user.email, isAdmin: user.isAdmin, adminRole: user.adminRole, permissions: user.permissions },
+      },
     });
     return user;
   }
@@ -149,13 +174,96 @@ export class AdminController {
   async setRole(
     @CurrentUser() admin: AuthPrincipal,
     @Param('id') id: string,
-    @Body(new ZodValidationPipe(adminSetRoleSchema)) body: { isAdmin: boolean },
+    @Body(new ZodValidationPipe(adminSetRoleSchema))
+    body: {
+      isAdmin: boolean;
+      adminRole?: 'SUPER_ADMIN' | 'ADMIN' | 'RESELLER' | null;
+      permissions?: string[];
+    },
   ) {
-    const user = await this.prisma.user.update({ where: { id }, data: { isAdmin: body.isAdmin }, select: { id: true, email: true, displayName: true, status: true, isAdmin: true } });
+    const user = await this.prisma.user.update({
+      where: { id },
+      data: {
+        isAdmin: body.isAdmin,
+        adminRole: body.isAdmin ? (body.adminRole ?? 'ADMIN') : null,
+        ...(body.permissions !== undefined ? { permissions: body.permissions } : {}),
+      },
+      select: {
+        id: true,
+        email: true,
+        displayName: true,
+        status: true,
+        isAdmin: true,
+        adminRole: true,
+        permissions: true,
+      },
+    });
     await this.prisma.auditLog.create({
-      data: { actorUserId: admin.sub, action: 'USER_ROLE_CHANGED', targetType: 'User', targetId: id, metadata: { isAdmin: body.isAdmin } },
+      data: {
+        actorUserId: admin.sub,
+        action: 'USER_ROLE_CHANGED',
+        targetType: 'User',
+        targetId: id,
+        metadata: { isAdmin: body.isAdmin, adminRole: body.adminRole, permissions: user.permissions },
+      },
     });
     return user;
+  }
+
+  @Get('resellers/summary')
+  async resellersSummary() {
+    const batches = await this.prisma.activationCodeBatch.findMany({
+      where: { reseller: { not: null } },
+      include: {
+        codes: {
+          select: { status: true, valueCents: true },
+        },
+      },
+    });
+
+    const summaryMap = new Map<
+      string,
+      {
+        resellerName: string;
+        batchesCount: number;
+        totalCodesCount: number;
+        redeemedCodesCount: number;
+        availableCodesCount: number;
+        totalGeneratedCents: number;
+        totalRedeemedCents: number;
+      }
+    >();
+
+    for (const batch of batches) {
+      const resellerName = batch.reseller?.trim();
+      if (!resellerName) continue;
+
+      const current = summaryMap.get(resellerName) ?? {
+        resellerName,
+        batchesCount: 0,
+        totalCodesCount: 0,
+        redeemedCodesCount: 0,
+        availableCodesCount: 0,
+        totalGeneratedCents: 0,
+        totalRedeemedCents: 0,
+      };
+
+      current.batchesCount += 1;
+      for (const code of batch.codes) {
+        current.totalCodesCount += 1;
+        current.totalGeneratedCents += code.valueCents;
+        if (code.status === 'REDEEMED') {
+          current.redeemedCodesCount += 1;
+          current.totalRedeemedCents += code.valueCents;
+        } else if (code.status === 'AVAILABLE') {
+          current.availableCodesCount += 1;
+        }
+      }
+
+      summaryMap.set(resellerName, current);
+    }
+
+    return Array.from(summaryMap.values());
   }
 
   @Post('accounts/:id/invitations')
@@ -252,19 +360,39 @@ export class AdminController {
   async activationCodeBatches(
     @Query('page') page = '1',
     @Query('pageSize') pageSize = '25',
+    @Query('q') q?: string,
+    @Query('campaign') campaign?: string,
+    @Query('reseller') reseller?: string,
+    @Query('createdById') createdById?: string,
   ) {
     const current = Math.max(1, Number(page) || 1);
     const size = Math.min(100, Math.max(1, Number(pageSize) || 25));
+    const where: Prisma.ActivationCodeBatchWhereInput = {
+      ...(campaign ? { campaign: { contains: campaign, mode: 'insensitive' } } : {}),
+      ...(reseller ? { reseller: { contains: reseller, mode: 'insensitive' } } : {}),
+      ...(createdById ? { createdById } : {}),
+      ...(q
+        ? {
+            OR: [
+              { name: { contains: q, mode: 'insensitive' } },
+              { campaign: { contains: q, mode: 'insensitive' } },
+              { reseller: { contains: q, mode: 'insensitive' } },
+              { notes: { contains: q, mode: 'insensitive' } },
+            ],
+          }
+        : {}),
+    };
     const [total, data] = await this.prisma.$transaction([
-      this.prisma.activationCodeBatch.count(),
+      this.prisma.activationCodeBatch.count({ where }),
       this.prisma.activationCodeBatch.findMany({
+        where,
         orderBy: { createdAt: 'desc' },
         skip: (current - 1) * size,
         take: size,
         include: {
           _count: { select: { codes: true } },
           codes: {
-            select: { valueCents: true, status: true, kind: true },
+            include: { plan: { select: { name: true } } },
           },
         },
       }),
@@ -286,6 +414,7 @@ export class AdminController {
         const creator = batch.createdById ? creatorMap.get(batch.createdById) : null;
         const totalValueCents = batch.codes.reduce((sum, c) => sum + c.valueCents, 0);
         const redeemedCount = batch.codes.filter((c) => c.status === 'REDEEMED').length;
+        const sampleCode = batch.codes[0];
         return {
           id: batch.id,
           name: batch.name,
@@ -298,6 +427,101 @@ export class AdminController {
           totalValueCents,
           createdBy: creator?.displayName ?? creator?.email ?? null,
           createdById: batch.createdById,
+          planName: sampleCode?.plan?.name ?? null,
+          kind: sampleCode?.kind ?? null,
+          durationUnit: sampleCode?.durationUnit ?? null,
+          durationValue: sampleCode?.durationValue ?? null,
+        };
+      }),
+    };
+  }
+
+  @Get('activation-codes')
+  async activationCodesList(
+    @Query('q') q?: string,
+    @Query('status') status?: string,
+    @Query('kind') kind?: string,
+    @Query('batchId') batchId?: string,
+    @Query('campaign') campaign?: string,
+    @Query('reseller') reseller?: string,
+    @Query('createdById') createdById?: string,
+    @Query('page') page = '1',
+    @Query('pageSize') pageSize = '25',
+  ) {
+    const current = Math.max(1, Number(page) || 1);
+    const size = Math.min(100, Math.max(1, Number(pageSize) || 25));
+    const where: Prisma.ActivationCodeWhereInput = {
+      ...(status && status !== 'ALL' ? { status: status as never } : {}),
+      ...(kind && kind !== 'ALL' ? { kind: kind as never } : {}),
+      ...(batchId ? { batchId } : {}),
+      ...(campaign ? { batch: { campaign: { contains: campaign, mode: 'insensitive' } } } : {}),
+      ...(reseller ? { batch: { reseller: { contains: reseller, mode: 'insensitive' } } } : {}),
+      ...(createdById ? { batch: { createdById } } : {}),
+      ...(q
+        ? {
+            OR: [
+              { code: { contains: q, mode: 'insensitive' } },
+              { codePrefix: { contains: q, mode: 'insensitive' } },
+              { batch: { name: { contains: q, mode: 'insensitive' } } },
+              { batch: { campaign: { contains: q, mode: 'insensitive' } } },
+              { batch: { reseller: { contains: q, mode: 'insensitive' } } },
+              { redemption: { user: { email: { contains: q, mode: 'insensitive' } } } },
+              { redemption: { user: { displayName: { contains: q, mode: 'insensitive' } } } },
+            ],
+          }
+        : {}),
+    };
+    const [total, data] = await this.prisma.$transaction([
+      this.prisma.activationCode.count({ where }),
+      this.prisma.activationCode.findMany({
+        where,
+        include: {
+          batch: {
+            select: { id: true, name: true, campaign: true, reseller: true, createdById: true },
+          },
+          plan: { select: { id: true, name: true } },
+          redemption: {
+            include: { user: { select: { id: true, email: true, displayName: true } } },
+          },
+        },
+        orderBy: { createdAt: 'desc' },
+        skip: (current - 1) * size,
+        take: size,
+      }),
+    ]);
+    const creatorIds = [...new Set(data.map((c) => c.batch?.createdById).filter(Boolean))];
+    const creators = creatorIds.length
+      ? await this.prisma.user.findMany({
+          where: { id: { in: creatorIds as string[] } },
+          select: { id: true, email: true, displayName: true },
+        })
+      : [];
+    const creatorMap = new Map(creators.map((c) => [c.id, c]));
+    return {
+      total,
+      page: current,
+      pageSize: size,
+      data: data.map((c) => {
+        const creator = c.batch?.createdById ? creatorMap.get(c.batch.createdById) : null;
+        return {
+          id: c.id,
+          code: c.code ?? c.codePrefix,
+          codePrefix: c.codePrefix,
+          kind: c.kind,
+          status: c.status,
+          valueCents: c.valueCents,
+          durationUnit: c.durationUnit,
+          durationValue: c.durationValue,
+          redemptionExpiresAt: c.redemptionExpiresAt,
+          createdAt: c.createdAt,
+          redeemedAt: c.redeemedAt,
+          batchId: c.batchId,
+          batchName: c.batch?.name ?? null,
+          campaign: c.batch?.campaign ?? null,
+          reseller: c.batch?.reseller ?? null,
+          createdBy: creator?.displayName ?? creator?.email ?? null,
+          plan: c.plan,
+          redeemedByUser: c.redemption?.user ?? null,
         };
       }),
     };
@@ -375,13 +599,116 @@ export class AdminController {
     return message;
   }
 
+  @Get('activation-code-batches/:id')
+  async activationCodeBatchDetail(
+    @Param('id') id: string,
+    @Query('q') q?: string,
+    @Query('status') status?: string,
+    @Query('kind') kind?: string,
+    @Query('page') page = '1',
+    @Query('pageSize') pageSize = '25',
+  ) {
+    const current = Math.max(1, Number(page) || 1);
+    const size = Math.min(100, Math.max(1, Number(pageSize) || 25));
+
+    const batch = await this.prisma.activationCodeBatch.findUniqueOrThrow({
+      where: { id },
+      select: {
+        id: true,
+        name: true,
+        campaign: true,
+        reseller: true,
+        notes: true,
+        createdAt: true,
+        createdById: true,
+      },
+    });
+
+    const baseWhere: Prisma.ActivationCodeWhereInput = {
+      batchId: id,
+      ...(status && status !== 'ALL' ? { status: status as never } : {}),
+      ...(kind && kind !== 'ALL' ? { kind: kind as never } : {}),
+      ...(q
+        ? {
+            OR: [
+              { code: { contains: q, mode: 'insensitive' } },
+              { codePrefix: { contains: q, mode: 'insensitive' } },
+              { redemption: { user: { email: { contains: q, mode: 'insensitive' } } } },
+              { redemption: { user: { displayName: { contains: q, mode: 'insensitive' } } } },
+            ],
+          }
+        : {}),
+    };
+
+    const [filteredTotal, allCodesCount, availableCount, redeemedCount, expiredCount, codes] =
+      await this.prisma.$transaction([
+        this.prisma.activationCode.count({ where: baseWhere }),
+        this.prisma.activationCode.count({ where: { batchId: id } }),
+        this.prisma.activationCode.count({ where: { batchId: id, status: 'AVAILABLE' } }),
+        this.prisma.activationCode.count({ where: { batchId: id, status: 'REDEEMED' } }),
+        this.prisma.activationCode.count({ where: { batchId: id, status: 'EXPIRED' } }),
+        this.prisma.activationCode.findMany({
+          where: baseWhere,
+          include: {
+            plan: { select: { name: true } },
+            redemption: {
+              include: { user: { select: { email: true, displayName: true } } },
+            },
+          },
+          orderBy: { createdAt: 'asc' },
+          skip: (current - 1) * size,
+          take: size,
+        }),
+      ]);
+
+    const creator = batch.createdById
+      ? await this.prisma.user.findUnique({
+          where: { id: batch.createdById },
+          select: { id: true, email: true, displayName: true },
+        })
+      : null;
+
+    return {
+      id: batch.id,
+      name: batch.name,
+      campaign: batch.campaign,
+      reseller: batch.reseller,
+      notes: batch.notes,
+      createdAt: batch.createdAt,
+      createdBy: creator?.displayName ?? creator?.email ?? null,
+      createdById: batch.createdById,
+      totalCodes: allCodesCount,
+      availableCodes: availableCount,
+      redeemedCodes: redeemedCount,
+      expiredCodes: expiredCount,
+      filteredTotal,
+      page: current,
+      pageSize: size,
+      codes: codes.map((c) => ({
+        id: c.id,
+        code: c.code ?? c.codePrefix,
+        codePrefix: c.codePrefix,
+        kind: c.kind,
+        status: c.status,
+        valueCents: c.valueCents,
+        durationUnit: c.durationUnit,
+        durationValue: c.durationValue,
+        redemptionExpiresAt: c.redemptionExpiresAt,
+        plan: c.plan,
+        redeemedByUser: c.redemption?.user ?? null,
+        redeemedAt: c.redeemedAt,
+        createdAt: c.createdAt,
+      })),
+    };
+  }
+
   @Get('users/:id')
   async userDetail(@Param('id') id: string) {
     const user = await this.prisma.user.findUniqueOrThrow({
       where: { id },
       select: { id: true, email: true, displayName: true, status: true, isAdmin: true, createdAt: true },
     });
-    const [memberships, ownedAccounts, devices, invitationsSent, invitationsFor, likes] = await this.prisma.$transaction([
+    const [memberships, ownedAccounts, devices, invitationsSent, invitationsFor, likes, createdBatches, redemptions] = await this.prisma.$transaction([
       this.prisma.accountMember.findMany({
         where: { userId: id },
         include: {
@@ -406,6 +733,22 @@ export class AdminController {
       this.prisma.invitation.findMany({ where: { createdById: id }, orderBy: { createdAt: 'desc' }, take: 50 }),
       this.prisma.invitation.findMany({ where: { email: user.email }, orderBy: { createdAt: 'desc' }, take: 50 }),
       this.prisma.contentLike.findMany({ where: { userId: id }, orderBy: { createdAt: 'desc' }, take: 50 }),
+      this.prisma.activationCodeBatch.findMany({
+        where: { createdById: id },
+        include: { _count: { select: { codes: true } } },
+        orderBy: { createdAt: 'desc' },
+        take: 50,
+      }),
+      this.prisma.activationRedemption.findMany({
+        where: { userId: id },
+        include: {
+          activationCode: {
+            include: { plan: { select: { name: true } }, batch: { select: { name: true, campaign: true, reseller: true } } },
+          },
+        },
+        orderBy: { redeemedAt: 'desc' },
+        take: 50,
+      }),
     ]);
     const accountIds = [...new Set([...memberships.map((member) => member.accountId), ...ownedAccounts.map((account) => account.id)])];
     const payments = accountIds.length
@@ -416,7 +759,7 @@ export class AdminController {
           take: 20,
         })
       : [];
-    return { ...user, memberships, ownedAccounts, devices, payments, invitationsSent, invitationsFor, likes };
+    return { ...user, memberships, ownedAccounts, devices, payments, invitationsSent, invitationsFor, likes, createdBatches, redemptions };
   }
 
   @Get('likes/top')

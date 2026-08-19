@@ -1,6 +1,10 @@
 import { Injectable, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { exportJWK, exportPKCS8, exportSPKI, generateKeyPair, importPKCS8, importSPKI, SignJWT } from 'jose';
+
+// jose is ESM-only — use dynamic import to avoid CJS/ESM conflict in nodenext
+async function loadJose() {
+  return import('jose');
+}
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 @Injectable()
@@ -10,6 +14,7 @@ export class LeaseKeyService implements OnModuleInit {
   constructor(private readonly config: ConfigService) {}
   private get keyDir() { return join(resolve(this.config.get<string>('STORAGE_LOCAL_ROOT', './storage')), 'keys'); }
   async onModuleInit() {
+    const { exportJWK, exportPKCS8, exportSPKI, generateKeyPair, importPKCS8, importSPKI } = await loadJose();
     const privatePath = join(this.keyDir, 'lease-ed25519-private.pem');
     const publicPath = join(this.keyDir, 'lease-ed25519-public.pem');
     try {
@@ -24,8 +29,9 @@ export class LeaseKeyService implements OnModuleInit {
       await writeFile(publicPath, await exportSPKI(pair.publicKey));
     }
   }
-  async getPublicJwk() { return { ...(await exportJWK(this.publicKey)), kid: 'appnime-lease-v1', use: 'sig', alg: 'EdDSA' }; }
-  sign(payload: Record<string, unknown>, expiresAt: Date) {
+  async getPublicJwk() { const { exportJWK } = await loadJose(); return { ...(await exportJWK(this.publicKey)), kid: 'appnime-lease-v1', use: 'sig', alg: 'EdDSA' }; }
+  async sign(payload: Record<string, unknown>, expiresAt: Date) {
+    const { SignJWT } = await loadJose();
     return new SignJWT(payload).setProtectedHeader({ alg: 'EdDSA', kid: 'appnime-lease-v1' }).setIssuedAt().setExpirationTime(Math.floor(expiresAt.getTime() / 1000)).sign(this.privateKey);
   }
 }

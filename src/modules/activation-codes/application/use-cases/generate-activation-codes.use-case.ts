@@ -26,6 +26,7 @@ export class GenerateActivationCodesUseCase {
         codes: {
           create: plaintextCodes.map((code) => ({
             planId: input.planId,
+            code,
             codeHash: sha256(code),
             codePrefix: code.slice(0, 9),
             kind: input.kind,

@@ -63,7 +63,9 @@
     "prisma": "7.9.1",
     "ts-jest": "^29.4.12",
     "tsx": "^4.23.12",
-    "typescript": "^5.9.3",
+    "@typescript/native": "npm:typescript@^7.0.2",
+    "@typescript/typescript6": "npm:@typescript/typescript6@^6.0.2",
+    "typescript": "npm:@typescript/typescript6@^6.0.2",
     "typescript-eslint": "^8.67.0"
   },
   "prisma": {

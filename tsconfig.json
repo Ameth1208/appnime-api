@@ -1,23 +1,28 @@
 {
   "compilerOptions": {
-    "module": "commonjs",
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
     "declaration": true,
     "removeComments": true,
     "emitDecoratorMetadata": true,
     "experimentalDecorators": true,
     "allowSyntheticDefaultImports": true,
-    "target": "ES2024",
-    "moduleResolution": "node",
+    "esModuleInterop": true,
+    "target": "ES2025",
     "sourceMap": true,
     "outDir": "./dist",
-    "baseUrl": "./",
+    "rootDir": "./src",
     "incremental": true,
     "skipLibCheck": true,
     "strict": true,
-    "noImplicitAny": true,
-    "strictNullChecks": true,
-    "forceConsistentCasingInFileNames": true,
     "noUnusedLocals": false,
-    "noUnusedParameters": false
-  }
+    "noUnusedParameters": false,
+    
+    "resolveJsonModule": true,
+    "resolvePackageJsonExports": true,
+    "forceConsistentCasingInFileNames": true,
+    "types": ["node", "multer", "express"]
+  },
+  "include": ["src"],
+  "exclude": ["node_modules", "dist", "test"]
 }

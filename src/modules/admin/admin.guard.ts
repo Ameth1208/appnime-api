@@ -5,13 +5,12 @@ import type { AuthPrincipal } from '../../common/security/current-user.decorator
 export enum AdminRole {
   SUPER_ADMIN = 'SUPER_ADMIN',
   ADMIN = 'ADMIN',
+  RESELLER = 'RESELLER',
 }
 
 /**
  * Guard que verifica que el usuario sea admin.
- * Si se pasa [requiredRole], además valida que tenga el nivel adecuado.
- *
- * Jerarquía: SUPER_ADMIN > ADMIN
+ * Jerarquía: SUPER_ADMIN > ADMIN > RESELLER
  */
 @Injectable()
 export class AdminGuard implements CanActivate {
@@ -23,15 +22,16 @@ export class AdminGuard implements CanActivate {
 
     const user = await this.prisma.user.findUnique({
       where: { id: principal.sub },
-      select: { isAdmin: true, adminRole: true, status: true },
+      select: { isAdmin: true, adminRole: true, permissions: true, status: true },
     });
     if (!user?.isAdmin || user.status !== 'ACTIVE') {
       throw new ForbiddenException({ code: 'ADMIN_REQUIRED' });
     }
 
-    // Almacenar el rol en el request para que los controllers lo usen.
+    // Almacenar el rol y permisos en el request para controladores.
     const request = context.switchToHttp().getRequest();
     request.adminRole = user.adminRole ?? AdminRole.ADMIN;
+    request.permissions = user.permissions ?? [];
 
     return true;
   }
@@ -39,7 +39,7 @@ export class AdminGuard implements CanActivate {
 
 /**
  * Guard específico para acciones que solo SUPER_ADMIN puede ejecutar
- * (generar códigos de activación, gestionar roles de admin, etc.).
+ * (gestión de otros administradores, configuraciones financieras y auditoría).
  */
 @Injectable()
 export class SuperAdminGuard implements CanActivate {
@@ -51,7 +51,7 @@ export class SuperAdminGuard implements CanActivate {
 
     const user = await this.prisma.user.findUnique({
       where: { id: principal.sub },
-      select: { isAdmin: true, adminRole: true, status: true },
+      select: { isAdmin: true, adminRole: true, permissions: true, status: true },
     });
     if (!user?.isAdmin || user.status !== 'ACTIVE') {
       throw new ForbiddenException({ code: 'SUPER_ADMIN_REQUIRED' });
@@ -59,6 +59,10 @@ export class SuperAdminGuard implements CanActivate {
     if (user.adminRole !== AdminRole.SUPER_ADMIN) {
       throw new ForbiddenException({ code: 'SUPER_ADMIN_REQUIRED' });
     }
+
+    const request = context.switchToHttp().getRequest();
+    request.adminRole = user.adminRole;
+    request.permissions = user.permissions ?? [];
 
     return true;
   }

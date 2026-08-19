@@ -18,6 +18,7 @@ export async function seedUsers(prisma: PrismaClient) {
         displayName: 'Super Admin',
         passwordHash,
         isAdmin: true,
+        adminRole: 'SUPER_ADMIN',
         status: 'ACTIVE',
         emailVerifiedAt: new Date(),
       },
