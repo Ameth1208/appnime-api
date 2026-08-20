@@ -27,6 +27,9 @@ COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/package.json ./package.json
 COPY --from=builder /app/prisma ./prisma
 
+# Create storage directory for uploads
+RUN mkdir -p /app/storage && chown -R node:node /app/storage
+
 # Generate Prisma client for the production image
 RUN npx prisma generate
 
