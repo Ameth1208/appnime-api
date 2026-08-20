@@ -3,35 +3,13 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: appnime-backend
     restart: unless-stopped
-    env_file:
-      - .env
     environment:
       - NODE_ENV=production
     networks:
       - dokploy-network
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:${PORT:-4000}/health || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 15s
-
-  appnime-admin:
-    build:
-      context: ../appnime-admin
-      dockerfile: Dockerfile
-    container_name: appnime-admin
-    restart: unless-stopped
-    env_file:
-      - ../appnime-admin/.env
-    environment:
-      - NODE_ENV=production
-    networks:
-      - dokploy-network
-    healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:${PORT:-3000} || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
