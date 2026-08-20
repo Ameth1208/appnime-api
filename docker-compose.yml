@@ -1,5 +1,6 @@
 services:
   appnime-backend:
+    container_name: appnime-backend
     build:
       context: .
       dockerfile: Dockerfile
