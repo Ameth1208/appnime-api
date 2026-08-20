@@ -1,0 +1,17 @@
+node_modules
+dist
+.git
+.env
+.env.*
+!.env.example
+coverage
+storage/*
+!storage/.gitkeep
+*.md
+docker-compose.yml
+docker-compose.*.yml
+Dockerfile
+.dockerignore
+.nest-cli
+tsconfig.build.tsbuildinfo
+tsconfig.tsbuildinfo

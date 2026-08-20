@@ -1,18 +1,42 @@
 services:
-  postgres:
-    image: postgres:17-alpine
+  appnime-backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: appnime-backend
+    restart: unless-stopped
+    env_file:
+      - .env
     environment:
-      POSTGRES_USER: appnime
-      POSTGRES_PASSWORD: appnime
-      POSTGRES_DB: appnime
-    ports:
-      - "5432:5432"
-    volumes:
-      - appnime_pg:/var/lib/postgresql/data
+      - NODE_ENV=production
+    networks:
+      - dokploy-network
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U appnime"]
-      interval: 5s
-      timeout: 5s
-      retries: 10
-volumes:
-  appnime_pg:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:${PORT:-4000}/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+  appnime-admin:
+    build:
+      context: ../appnime-admin
+      dockerfile: Dockerfile
+    container_name: appnime-admin
+    restart: unless-stopped
+    env_file:
+      - ../appnime-admin/.env
+    environment:
+      - NODE_ENV=production
+    networks:
+      - dokploy-network
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:${PORT:-3000} || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+networks:
+  dokploy-network:
+    external: true
