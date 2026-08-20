@@ -9,6 +9,8 @@ export class LoginUserUseCase {
   constructor(private readonly prisma: PrismaService, private readonly sessions: CreateAuthSessionUseCase) {}
   async execute(input: LoginInput) {
     const user = await this.prisma.user.findUnique({ where: { email: input.email } });
+    console.log(user);
+    
     if (!user || user.status !== 'ACTIVE' || !(await verify(user.passwordHash, input.password))) {
       throw new UnauthorizedException({ code: 'INVALID_CREDENTIALS' });
     }
