@@ -15,11 +15,13 @@ async function bootstrap() {
       crossOriginEmbedderPolicy: false,
     }),
   );
+  const corsOrigins = config.get<string>('CORS_ORIGINS', '*');
+  const allowedOrigins = corsOrigins === '*' ? '*' : corsOrigins.split(',').map((o) => o.trim());
   app.enableCors({
-    origin: '*',
-    credentials: false,
+    origin: allowedOrigins,
+    credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: '*',
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
   });
   app.setGlobalPrefix('api', { exclude: ['health'] });
   const document = SwaggerModule.createDocument(
