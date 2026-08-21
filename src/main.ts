@@ -16,12 +16,11 @@ async function bootstrap() {
     }),
   );
   const corsOrigins = config.get<string>('CORS_ORIGINS', '*');
-  const allowedOrigins = corsOrigins === '*' ? '*' : corsOrigins.split(',').map((o) => o.trim());
   app.enableCors({
-    origin: allowedOrigins,
+    origin: true,
     credentials: true,
-    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+    methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
+    allowedHeaders: true,
   });
   app.setGlobalPrefix('api', { exclude: ['health'] });
   const document = SwaggerModule.createDocument(
