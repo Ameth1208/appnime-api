@@ -21,6 +21,9 @@ export class RegisterDeviceUseCase {
     // su identidad sea estable (evita prompts de "nuevo dispositivo" en cada
     // login). La suscripción se valida al emitir leases y UsageSessions.
     const entitlement = await this.policy.resolve(membership.accountId);
+    const fingerprintHash = this.fingerprint.hash(input.fingerprint);
+    const macHash = this.fingerprint.hash(input.mac);
+
     const existing = await this.prisma.device.findUnique({
       where: { accountId_installationId: { accountId: membership.accountId, installationId: input.installationId } },
     });
@@ -30,6 +33,32 @@ export class RegisterDeviceUseCase {
         where: { id: existing.id },
         data: this.deviceUpdate(input),
       });
+    }
+
+    // Mismo equipo físico: si la huella de hardware coincide con un registro
+    // previo (aunque esté REVOKED o su installationId cambió tras una
+    // reinstalación), se reactiva ESA fila en lugar de crear una nueva. Así
+    // reinstalar la app no consume slots ni choca con límites/ventanas.
+    const hardwareMatchers = [
+      ...(fingerprintHash ? [{ deviceFingerprintHash: fingerprintHash }] : []),
+      ...(macHash ? [{ macHash }] : []),
+    ];
+    if (hardwareMatchers.length) {
+      const sameHardware = await this.prisma.device.findFirst({
+        where: { accountId: membership.accountId, userId, OR: hardwareMatchers },
+        orderBy: { lastSeenAt: 'desc' },
+      });
+      if (sameHardware) {
+        return this.prisma.device.update({
+          where: { id: sameHardware.id },
+          data: {
+            ...this.deviceUpdate(input),
+            installationId: input.installationId,
+            deviceFingerprintHash: fingerprintHash,
+            macHash,
+          },
+        });
+      }
     }
     // El límite SIEMPRE es el del plan del usuario (p.ej. Individual 3,
     // Family 5). Si la suscripción está inactiva usamos el último plan
