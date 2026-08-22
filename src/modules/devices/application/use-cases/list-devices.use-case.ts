@@ -5,6 +5,11 @@ import { PrismaService } from '../../../../common/database/prisma.service';
 export class ListDevicesUseCase {
   constructor(private readonly prisma: PrismaService) {}
   execute(userId: string) {
-    return this.prisma.device.findMany({ where: { userId }, orderBy: { lastSeenAt: 'desc' } });
+    // Solo dispositivos vigentes: los revocados (quitados a mano o
+    // auto-reemplazados) no deben aparecer en "Mis dispositivos".
+    return this.prisma.device.findMany({
+      where: { userId, status: 'ACTIVE' },
+      orderBy: { lastSeenAt: 'desc' },
+    });
   }
 }

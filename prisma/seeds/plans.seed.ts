@@ -10,6 +10,11 @@ const common = {
   public: true,
 };
 
+const family = {
+  ...common,
+  maxDevicesPerUser: 5,
+};
+
 export const initialPlans = [
   {
     ...common,
@@ -34,10 +39,10 @@ export const initialPlans = [
     canInviteMembers: false,
   },
   {
-    ...common,
+    ...family,
     code: 'FAMILY_MONTHLY',
     name: 'Family Mensual',
-    description: 'Owner + 4 miembros, 3 dispositivos por persona, 1 uso simultaneo por persona.',
+    description: 'Owner + 4 miembros, 5 dispositivos por persona, 1 uso simultaneo por persona.',
     priceCents: 2_500_000,
     billingInterval: BillingInterval.MONTH,
     billingMode: BillingMode.AUTOMATIC,
@@ -45,10 +50,10 @@ export const initialPlans = [
     canInviteMembers: true,
   },
   {
-    ...common,
+    ...family,
     code: 'FAMILY_YEARLY',
     name: 'Family Anual',
-    description: 'Owner + 4 miembros, 3 dispositivos por persona, 1 uso simultaneo por persona.',
+    description: 'Owner + 4 miembros, 5 dispositivos por persona, 1 uso simultaneo por persona.',
     priceCents: 25_000_000,
     billingInterval: BillingInterval.YEAR,
     billingMode: BillingMode.AUTOMATIC,
@@ -68,11 +73,11 @@ export const initialPlans = [
     canInviteMembers: false,
   },
   {
-    ...common,
+    ...family,
     public: false,
     code: 'FAMILY_LIFETIME_INTERNAL',
     name: 'Family Permanente',
-    description: 'Grant interno permanente: owner + 4 miembros, 3 dispositivos por persona.',
+    description: 'Grant interno permanente: owner + 4 miembros, 5 dispositivos por persona.',
     priceCents: 0,
     billingInterval: BillingInterval.LIFETIME,
     billingMode: BillingMode.PERMANENT,

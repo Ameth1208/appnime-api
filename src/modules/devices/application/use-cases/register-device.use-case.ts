@@ -16,8 +16,11 @@ export class RegisterDeviceUseCase {
 
   async execute(userId: string, input: RegisterDeviceInput) {
     const membership = await this.access.activeMembership(userId);
+    // El registro del dispositivo NO debe depender de la suscripción: si la
+    // cuenta está inactiva o expirada, igual registramos el equipo para que
+    // su identidad sea estable (evita prompts de "nuevo dispositivo" en cada
+    // login). La suscripción se valida al emitir leases y UsageSessions.
     const entitlement = await this.policy.resolve(membership.accountId);
-    if (!entitlement.active) throw new BadRequestException({ code: entitlement.reason });
     const existing = await this.prisma.device.findUnique({
       where: { accountId_installationId: { accountId: membership.accountId, installationId: input.installationId } },
     });
@@ -28,11 +31,38 @@ export class RegisterDeviceUseCase {
         data: this.deviceUpdate(input),
       });
     }
-    const activeCount = await this.prisma.device.count({ where: { userId, accountId: membership.accountId, status: 'ACTIVE' } });
-    if (activeCount >= entitlement.plan.maxDevicesPerUser) {
-      throw new BadRequestException({ code: 'USER_DEVICE_LIMIT_REACHED', maxDevices: entitlement.plan.maxDevicesPerUser });
+    // El límite SIEMPRE es el del plan del usuario (p.ej. Individual 3,
+    // Family 5). Si la suscripción está inactiva usamos el último plan
+    // conocido de la cuenta; solo si nunca tuvo plan aplicamos el fallback.
+    let maxDevices = Number(process.env.DEVICE_FALLBACK_MAX ?? 5);
+    if (entitlement.active) {
+      maxDevices = entitlement.plan.maxDevicesPerUser;
+    } else {
+      const lastPlan = await this.prisma.subscription.findFirst({
+        where: { accountId: membership.accountId },
+        include: { plan: true },
+        orderBy: { createdAt: 'desc' },
+      });
+      if (lastPlan) maxDevices = lastPlan.plan.maxDevicesPerUser;
     }
-    await this.enforceReplacementWindow(userId, membership.accountId, entitlement.plan.maxDeviceChangesPerWindow, entitlement.plan.deviceChangeWindowDays);
+    const activeCount = await this.prisma.device.count({ where: { userId, accountId: membership.accountId, status: 'ACTIVE' } });
+    if (activeCount >= maxDevices) {
+      // Reemplazo automático: liberar el dispositivo más viejo (por último
+      // uso) para hacer sitio al nuevo, en vez de rechazar el registro.
+      const oldest = await this.prisma.device.findFirst({
+        where: { userId, accountId: membership.accountId, status: 'ACTIVE' },
+        orderBy: { lastSeenAt: 'asc' },
+      });
+      if (!oldest) throw new BadRequestException({ code: 'USER_DEVICE_LIMIT_REACHED', maxDevices });
+      await this.revokeDevice(oldest.id, membership.accountId, userId);
+    }
+    const maxChanges = entitlement.active
+      ? entitlement.plan.maxDeviceChangesPerWindow
+      : Number(process.env.DEVICE_FALLBACK_CHANGES ?? 5);
+    const windowDays = entitlement.active
+      ? entitlement.plan.deviceChangeWindowDays
+      : 30;
+    await this.enforceReplacementWindow(userId, membership.accountId, maxChanges, windowDays);
     const device = await this.prisma.device.create({
       data: {
         accountId: membership.accountId,
@@ -51,6 +81,18 @@ export class RegisterDeviceUseCase {
     });
     await this.prisma.deviceChange.create({ data: { accountId: membership.accountId, userId, deviceId: device.id, action: 'REGISTERED' } });
     return device;
+  }
+
+  /// Revoca un dispositivo y sus sesiones (mismo efecto que quitarlo desde
+  /// "Mis dispositivos"), registrando el cambio para la ventana de reemplazo.
+  private async revokeDevice(deviceId: string, accountId: string, userId: string) {
+    const now = new Date();
+    await this.prisma.$transaction([
+      this.prisma.device.update({ where: { id: deviceId }, data: { status: 'REVOKED', revokedAt: now } }),
+      this.prisma.session.updateMany({ where: { deviceId, revokedAt: null }, data: { revokedAt: now } }),
+      this.prisma.usageSession.updateMany({ where: { deviceId, status: 'ACTIVE' }, data: { status: 'REVOKED', revokedAt: now } }),
+      this.prisma.deviceChange.create({ data: { accountId, userId, deviceId, action: 'AUTO_REPLACED' } }),
+    ]);
   }
 
   private deviceUpdate(input: RegisterDeviceInput) {
