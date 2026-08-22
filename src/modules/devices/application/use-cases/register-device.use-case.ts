@@ -62,7 +62,13 @@ export class RegisterDeviceUseCase {
     const windowDays = entitlement.active
       ? entitlement.plan.deviceChangeWindowDays
       : 30;
-    await this.enforceReplacementWindow(userId, membership.accountId, maxChanges, windowDays);
+    // Ventana anti-reemplazos masivos OPCIONAL (DEVICE_ENFORCE_CHANGE_WINDOW,
+    // default false): con el auto-reemplazo del más viejo activo, bloquear el
+    // registro deja al usuario fuera de la app sin beneficio real. Los
+    // reemplazos automáticos nunca cuentan para esta ventana.
+    if (String(process.env.DEVICE_ENFORCE_CHANGE_WINDOW ?? 'false') === 'true') {
+      await this.enforceReplacementWindow(userId, membership.accountId, maxChanges, windowDays);
+    }
     const device = await this.prisma.device.create({
       data: {
         accountId: membership.accountId,
