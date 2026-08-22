@@ -47,4 +47,12 @@ export class ReleasesService {
       path: await this.storage.resolvePath(release.objectKey),
     };
   }
+
+  /// Listado para el panel admin (todas las plataformas, más recientes primero).
+  list(take = 50) {
+    return this.prisma.appRelease.findMany({
+      orderBy: { publishedAt: 'desc' },
+      take,
+    });
+  }
 }

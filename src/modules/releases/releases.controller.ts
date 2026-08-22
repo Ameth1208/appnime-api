@@ -39,6 +39,27 @@ export class ReleasesController {
   }
 
   @UseGuards(JwtAuthGuard, AdminGuard)
+  @Get()
+  async list() {
+    const releases = await this.releases.list();
+    return releases.map((release) => ({
+      id: release.id,
+      version: release.version,
+      tag: release.tag,
+      platform: release.platform,
+      channel: release.channel,
+      architecture: release.architecture,
+      policy: release.policy,
+      minimumVersion: release.minimumVersion,
+      notes: release.notes,
+      fileName: release.fileName,
+      sizeBytes: release.sizeBytes.toString(),
+      published: release.published,
+      publishedAt: release.publishedAt,
+    }));
+  }
+
+  @UseGuards(JwtAuthGuard, AdminGuard)
   @Post()
   @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 1024 * 1024 * 1024 } }))
   create(@UploadedFile() file: Express.Multer.File | undefined, @Query(new ZodValidationPipe(releaseMetaSchema)) meta: ReleaseMetaInput) {
