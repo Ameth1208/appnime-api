@@ -4,6 +4,7 @@ import { validateEnv } from './common/config/env.schema';
 import { DatabaseModule } from './common/database/database.module';
 import { StorageModule } from './common/storage/storage.module';
 import { ContentModule } from './modules/content/content.module';
+import { CatalogModule } from './modules/catalog/catalog.module';
 import { AccountsModule } from './modules/accounts/accounts.module';
 import { ActivationCodesModule } from './modules/activation-codes/activation-codes.module';
 import { AdminModule } from './modules/admin/admin.module';
@@ -48,6 +49,7 @@ import { UsersModule } from './modules/users/users.module';
     RealtimeModule,
     AdminModule,
     ContentModule,
+    CatalogModule,
     HealthModule,
   ],
 })

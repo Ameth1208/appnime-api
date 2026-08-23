@@ -4,3 +4,4 @@ dist
 coverage
 storage/*
 !storage/.gitkeep
+*.tsbuildinfo

@@ -26,6 +26,10 @@ export const envSchema = z.object({
   S3_PUBLIC_BASE_URL: optionalUrl,
   PUBLIC_BASE_URL: z.string().url(),
   CORS_ORIGINS: z.string().default('http://localhost:3000'),
+  TMDB_API_KEY: z.string().default(''),
+  CATALOG_EMBED_SOURCES: z.string().default('vidsrc.xyz,autoembed,multiembed,vidlink'),
+  MEILI_HOST: optionalUrl,
+  MEILI_MASTER_KEY: z.string().default(''),
 });
 
 export type AppEnv = z.infer<typeof envSchema>;
@@ -38,3 +42,4 @@ export function validateEnv(input: Record<string, unknown>) {
   }
   return parsed;
 }
+

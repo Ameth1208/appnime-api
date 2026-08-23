@@ -29,10 +29,17 @@ services:
       - S3_PUBLIC_BASE_URL=${S3_PUBLIC_BASE_URL:-}
       - PUBLIC_BASE_URL=${PUBLIC_BASE_URL}
       - CORS_ORIGINS=${CORS_ORIGINS}
+      - TMDB_API_KEY=${TMDB_API_KEY}
+      - CATALOG_EMBED_SOURCES=${CATALOG_EMBED_SOURCES:-vidsrc.xyz,autoembed,multiembed,vidlink}
+      - CATALOG_VIDLINK=${CATALOG_VIDLINK:-on}
+      - MEILI_HOST=${MEILI_HOST:-http://appnime-meilisearch:7700}
+      - MEILI_MASTER_KEY=${MEILI_MASTER_KEY:-appnime-meili-key}
       - INITIAL_ADMIN_EMAIL=${INITIAL_ADMIN_EMAIL:-}
       - INITIAL_ADMIN_PASSWORD=${INITIAL_ADMIN_PASSWORD:-}
       - INITIAL_USER_EMAIL=${INITIAL_USER_EMAIL:-}
       - INITIAL_USER_PASSWORD=${INITIAL_USER_PASSWORD:-}
+    depends_on:
+      - appnime-meilisearch
     volumes:
       - appnime_storage:/app/storage
     networks:
@@ -44,8 +51,21 @@ services:
       retries: 3
       start_period: 15s
 
+  appnime-meilisearch:
+    container_name: appnime-meilisearch
+    image: getmeili/meilisearch:v1.8
+    restart: unless-stopped
+    environment:
+      - MEILI_MASTER_KEY=${MEILI_MASTER_KEY:-appnime-meili-key}
+      - MEILI_NO_ANALYTICS=true
+    volumes:
+      - meili_data:/meili_data
+    networks:
+      - dokploy-network
+
 volumes:
   appnime_storage:
+  meili_data:
 
 networks:
   dokploy-network:
