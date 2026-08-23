@@ -12,6 +12,8 @@ import { buildCatalogProviders, type AnyCatalogProvider } from './infrastructure
 import { buildMetadataProvider } from './infrastructure/metadata/metadata.factory';
 import { CatalogSearchService } from './infrastructure/search/catalog-search.service';
 import { JkanimeSearchService } from './infrastructure/providers/jkanime/jkanime-search.service';
+import { JkanimeCatalogService } from './infrastructure/providers/jkanime/jkanime-catalog.service';
+import { JkAnimeAdapter } from './infrastructure/providers/jkanime/jkanime.adapter';
 
 @Module({
   controllers: [CatalogController],
@@ -19,17 +21,18 @@ import { JkanimeSearchService } from './infrastructure/providers/jkanime/jkanime
     TmdbService,
     CatalogSearchService,
     JkanimeSearchService,
+    JkanimeCatalogService,
     {
       provide: MOVIE_PROVIDERS,
-      inject: [ConfigService],
-      useFactory: (config: ConfigService): AnyCatalogProvider[] =>
-        buildCatalogProviders(config).filter((p) => p.supportedTypes.includes('movie')),
+      inject: [ConfigService, JkanimeCatalogService],
+      useFactory: (config: ConfigService, jk: JkanimeCatalogService): AnyCatalogProvider[] =>
+        buildCatalogProviders(config, jk).filter((p) => p.supportedTypes.includes('movie')),
     },
     {
       provide: SERIES_PROVIDERS,
-      inject: [ConfigService],
-      useFactory: (config: ConfigService): AnyCatalogProvider[] =>
-        buildCatalogProviders(config).filter((p) => p.supportedTypes.includes('series')),
+      inject: [ConfigService, JkanimeCatalogService],
+      useFactory: (config: ConfigService, jk: JkanimeCatalogService): AnyCatalogProvider[] =>
+        buildCatalogProviders(config, jk).filter((p) => p.supportedTypes.includes('series')),
     },
     {
       provide: METADATA_PROVIDER,
@@ -41,3 +44,4 @@ import { JkanimeSearchService } from './infrastructure/providers/jkanime/jkanime
   exports: [CatalogService],
 })
 export class CatalogModule {}
+
