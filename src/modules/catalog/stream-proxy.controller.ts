@@ -20,6 +20,61 @@ const ALLOWED_HOSTS = [
 
 @Controller('v1/catalog/stream')
 export class StreamProxyController {
+  /// Obtiene un playlist HLS desde el upstream, resuelve todas las URLs
+  /// relativas a absolutas y lo devuelve al player. El player se conecta
+  /// DIRECTAMENTE al CDN usando esas URLs absolutas — nuestro backend solo
+  /// sirve el playlist inicial (~1-2 KB), nunca los segmentos de video.
+  @Get('playlist')
+  async playlist(
+    @Query('url') url: string,
+    @Query('referer') refererParam: string | undefined,
+    @Res() res: Response,
+  ): Promise<void> {
+    if (!url) {
+      res.status(400).send('Missing url');
+      return;
+    }
+
+    try {
+      const upstream = await fetch(url, {
+        headers: this.browserHeaders(refererParam),
+        redirect: 'follow',
+        signal: AbortSignal.timeout(30000),
+      });
+
+      if (!upstream.ok) {
+        res.status(upstream.status).send(`Upstream ${upstream.status}`);
+        return;
+      }
+
+      // La URL final después de redirects = base para resolver relativas.
+      const finalUrl = upstream.url || url;
+      let body = await upstream.text();
+
+      // Si no es HLS, devolver tal cual (podría ser redirect HTML).
+      if (!body.trimStart().startsWith('#EXTM3U')) {
+        res.status(502).send('Not an HLS playlist');
+        return;
+      }
+
+      // Resolver TODAS las URLs relativas a absolutas contra el CDN real.
+      body = this.resolveRelativeUrls(body, finalUrl);
+
+      res.set({
+        'Content-Type': 'application/vnd.apple.mpegurl',
+        'Cache-Control': 'no-cache',
+        'Access-Control-Allow-Origin': '*',
+      });
+      res.send(body);
+    } catch (err) {
+      res.status(502).send(
+        `Playlist error: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  }
+
+  /// Proxy para recursos que SÍ necesitan intermediario (tokens expirados,
+  /// CDNs que bloquean por IP, etc). Usar con moderación.
   @Get('proxy')
   async proxy(
     @Query('url') url: string,
@@ -31,67 +86,33 @@ export class StreamProxyController {
       return;
     }
 
-    const parsed = new URL(url);
-    const hostOk = ALLOWED_HOSTS.some(
-      (h) => parsed.hostname === h || parsed.hostname.endsWith(`.${h}`),
-    );
-    if (!hostOk) {
-      res.status(403).send('Host not allowed');
-      return;
-    }
-
-    const referer = refererParam || `${parsed.protocol}//${parsed.host}/`;
-
     try {
       const upstream = await fetch(url, {
-        headers: {
-          'user-agent':
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/126.0 Safari/537.36',
-          accept: '*/*',
-          referer,
-        },
+        headers: this.browserHeaders(refererParam),
         redirect: 'follow',
         signal: AbortSignal.timeout(30000),
       });
 
-      if (!upstream.ok) {
-        res.status(upstream.status).send(`Upstream ${upstream.status}`);
-        return;
-      }
+      const contentType = upstream.headers.get('content-type') ?? '';
 
-      // Usar la URL FINAL después de redirects como base para resolver
-      // rutas relativas en el playlist HLS.
-      const finalUrl = upstream.url || url;
-
-      const contentType =
-        upstream.headers.get('content-type') ?? '';
-
+      // Si es otro playlist HLS, resolverlo también.
       const bodyText = await upstream.text();
-
-      const isM3u8 =
+      if (
         contentType.includes('mpegurl') ||
-        finalUrl.includes('.m3u8') ||
-        bodyText.trimStart().startsWith('#EXTM3U');
-
-      if (isM3u8 && bodyText.trimStart().startsWith('#EXTM3U')) {
-        const publicBase =
-          process.env.PUBLIC_BASE_URL ?? 'http://localhost:4000';
-        const rewritten = this.rewriteHls(bodyText, finalUrl, referer, publicBase);
-        res.set({
-          'Content-Type': 'application/vnd.apple.mpegurl',
-          'Cache-Control': 'no-cache',
-          'Access-Control-Allow-Origin': '*',
-        });
-        res.send(rewritten);
+        bodyText.trimStart().startsWith('#EXTM3U')
+      ) {
+        const finalUrl = upstream.url || url;
+        const resolved = this.resolveRelativeUrls(bodyText, finalUrl);
+        res.set({ 'Content-Type': 'application/vnd.apple.mpegurl' });
+        res.send(resolved);
         return;
       }
 
-      // Segmentos binarios u otros recursos: pasar directamente.
+      // Binario directo (video segment, image, etc).
       const buffer = Buffer.from(await upstream.arrayBuffer());
       res.set({
         'Content-Type': contentType || 'application/octet-stream',
         'Content-Length': String(buffer.length),
-        'Access-Control-Allow-Origin': '*',
       });
       res.send(buffer);
     } catch (err) {
@@ -101,33 +122,72 @@ export class StreamProxyController {
     }
   }
 
-  private rewriteHls(
-    content: string,
-    baseUrl: string,
-    referer: string | undefined,
-    proxyBase: string,
-  ): string {
+  /// Convierte todas las URLs relativas de un playlist HLS a absolutas
+  /// resolviéndolas contra la URL base del playlist. El resultado es un
+  /// playlist con URLs absolutas que el player puede acceder directamente.
+  private resolveRelativeUrls(content: string, baseUrl: string): string {
     return content
       .split('\n')
       .map((line) => {
         const trimmed = line.trim();
         if (!trimmed) return line;
+
+        // #EXT-X-STREAM-INF tiene URI="..." embebida
         if (trimmed.startsWith('#EXT-X-STREAM-INF')) {
-          // Guardar para procesar la URL de la siguiente línea.
+          const uriMatch = line.match(/URI="([^"]+)"/);
+          if (uriMatch && !uriMatch[1].startsWith('http')) {
+            try {
+              const abs = new URL(uriMatch[1], baseUrl).toString();
+              return line.replace(uriMatch[1], abs);
+            } catch { /* keep original */ }
+          }
           return line;
         }
+
+        // #EXT-X-I-FRAME-STREAM-INF también tiene URI=
+        if (trimmed.startsWith('#EXT-X-I-FRAME-STREAM-INF')) {
+          const uriMatch = line.match(/URI="([^"]+)"/);
+          if (uriMatch && !uriMatch[1].startsWith('http')) {
+            try {
+              const abs = new URL(uriMatch[1], baseUrl).toString();
+              return line.replace(uriMatch[1], abs);
+            } catch { /* keep original */ }
+          }
+          return line;
+        }
+
+        // #EXT-X-MAP (init segment para fMP4)
+        if (trimmed.startsWith('#EXT-X-MAP')) {
+          const uriMatch = line.match(/URI="([^"]+)"/);
+          if (uriMatch && !uriMatch[1].startsWith('http')) {
+            try {
+              const abs = new URL(uriMatch[1], baseUrl).toString();
+              return line.replace(uriMatch[1], abs);
+            } catch { /* keep original */ }
+          }
+          return line;
+        }
+
+        // Líneas que empiezan con # son comentarios/tags — dejar como están.
         if (trimmed.startsWith('#')) return line;
-        try {
-          // Resolver la URL relativa contra el CDN real (baseUrl).
-          const abs = new URL(trimmed, baseUrl).toString();
-          const ref = referer
-            ? `&referer=${encodeURIComponent(referer)}`
-            : '';
-          return `${proxyBase}/api/v1/catalog/stream/proxy?url=${encodeURIComponent(abs)}${ref}`;
-        } catch {
-          return line;
+
+        // Cualquier otra línea no vacía es una URL (segmento o variante).
+        if (!trimmed.startsWith('http://') && !trimmed.startsWith('https://')) {
+          try {
+            return new URL(trimmed, baseUrl).toString();
+          } catch { return line; }
         }
+        return line;
       })
       .join('\n');
+  }
+
+  private browserHeaders(referer?: string): Record<string, string> {
+    return {
+      'user-agent':
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/126.0 Safari/537.36',
+      accept: '*/*',
+      ...(referer ? { referer } : {}),
+    };
   }
 }

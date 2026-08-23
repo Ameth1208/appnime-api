@@ -93,32 +93,30 @@ export class NsrPlayCatalogProvider implements TmdbKeyedProvider {
         const langLabel = `${server.language} · ${server.name}`;
         const candidates: ResolvedStream[] = [];
 
-        // Envolver TODAS las URLs a través de nuestro proxy para evitar
-        // bloqueos del CDN hacia el player.
-        const proxyWrap = (rawUrl: string): string => {
-          const publicBase = process.env.PUBLIC_BASE_URL ?? 'http://localhost:4000';
-          return `${publicBase}/api/v1/catalog/stream/proxy?url=${encodeURIComponent(rawUrl)}&referer=${encodeURIComponent('https://nsrplay.space/')}`;
-        };
+        // Envolver el stream a través de nuestro endpoint de playlist.
+        // El playlist resuelve URLs relativas a absolutas para que el player
+        // se conecte DIRECTAMENTE al CDN sin intermediarios.
+        const publicBase = process.env.PUBLIC_BASE_URL ?? 'http://localhost:4000';
+        const wrapPlaylist = (rawUrl: string): string =>
+          `${publicBase}/api/v1/catalog/stream/playlist?url=${encodeURIComponent(rawUrl)}&referer=${encodeURIComponent('https://nsrplay.space/')}`;
 
         if (rj.data.directUrl) {
           candidates.push({
-            url: proxyWrap(rj.data.directUrl) as unknown as ResolvedStream['url'],
-            urlIsProxy: true,
+            url: wrapPlaylist(rj.data.directUrl),
             kind: 'hls',
             quality: 'auto',
-            server: `${langLabel} · directo`,
+            server: langLabel,
             providerId: this.id,
-          } as unknown as ResolvedStream);
+          });
         }
         if (rj.data.playUrl) {
           candidates.push({
-            url: proxyWrap(rj.data.playUrl) as unknown as ResolvedStream['url'],
-            urlIsProxy: true,
+            url: wrapPlaylist(rj.data.playUrl),
             kind: 'hls',
             quality: 'auto',
             server: `${langLabel} · proxy`,
             providerId: this.id,
-          } as unknown as ResolvedStream);
+          });
         }
         if (candidates.length === 0) throw new Error('no stream URLs');
         return candidates;
