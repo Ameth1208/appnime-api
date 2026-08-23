@@ -167,6 +167,7 @@ export class CatalogService {
       year: d.year,
       rating: d.rating,
       genres: d.genres,
+      languages: this.availableLanguages(),
       runtimeMinutes: d.runtimeMinutes,
     };
   }
@@ -191,6 +192,7 @@ export class CatalogService {
       year: d.year,
       rating: d.rating,
       genres: d.genres,
+      languages: this.availableLanguages(),
       seasons: seasonNumbers.map((number, i) => ({
         number,
         episodes: episodesBySeason[i].map((e) => ({
@@ -277,6 +279,16 @@ export class CatalogService {
     });
   }
 
+  /// Idiomas disponibles según los providers registrados.
+  private availableLanguages(): string[] {
+    const hasLatino = [...this.movieProviders, ...this.seriesProviders].some(
+      (p) => p.id === 'nsrplay' || p.id === 'unlimplay',
+    );
+    return hasLatino
+      ? ['Español Latino', 'Subtitulado']
+      : ['Subtitulado'];
+  }
+
   private toSummary(item: { id: string; title: string; posterUrl?: string; year?: number; rating?: number }, type: 'movie' | 'series'): ContentSummary {
     return {
       id: item.id,
@@ -325,5 +337,7 @@ export class CatalogService {
     return chosen?.id ?? null;
   }
 }
+
+
 
 
