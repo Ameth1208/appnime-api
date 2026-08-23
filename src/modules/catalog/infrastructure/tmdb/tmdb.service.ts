@@ -15,6 +15,8 @@ export interface RawTmdbItem {
   id: number;
   title?: string;
   name?: string;
+  original_title?: string;
+  original_name?: string;
   poster_path?: string | null;
   backdrop_path?: string | null;
   vote_average?: number;
@@ -26,6 +28,8 @@ export interface RawTmdbItem {
 }
 
 interface RawTmdbDetail extends RawTmdbItem {
+  original_title?: string;
+  original_name?: string;
   genres?: { id: number; name: string }[];
   runtime?: number | null;
   episode_run_time?: number[];
@@ -107,6 +111,8 @@ export class TmdbService {
     return this.get<{ episodes: RawEpisode[] }>(`/tv/${id}/season/${season}`);
   }
 }
+
+
 
 
 

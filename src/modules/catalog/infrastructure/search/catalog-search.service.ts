@@ -38,17 +38,26 @@ export class CatalogSearchService {
     const apiKey = this.config.get<string>('MEILI_MASTER_KEY') ?? undefined;
     const client = new Meilisearch({ host, apiKey });
     this.client = client;
-    const created = await client.createIndex(INDEX, { primaryKey: 'id' }).catch(() => null);
-    if (created) {
-      await client
-        .index(INDEX)
-        .updateSettings({
-          searchableAttributes: ['title'],
-          filterableAttributes: ['type', 'year'],
-          sortableAttributes: ['rating', 'popularity', 'year'],
-        })
-        .waitTask();
+
+    // Garantiza que el índice exista CON primaryKey 'id'. Si existe con otra
+    // pk (estado corrupto), se elimina y recrea: los docs viejos son
+    // regenerados por el sync.
+    const info = await client.getIndex(INDEX).catch(() => null);
+    if (info && info.primaryKey !== 'id') {
+      await client.deleteIndex(INDEX);
+      await client.createIndex(INDEX, { primaryKey: 'id' }).waitTask();
+    } else if (!info) {
+      await client.createIndex(INDEX, { primaryKey: 'id' }).waitTask();
     }
+    await client
+      .index(INDEX)
+      .updateSettings({
+        searchableAttributes: ['title'],
+        filterableAttributes: ['type', 'year'],
+        sortableAttributes: ['rating', 'popularity', 'year'],
+      })
+      .waitTask();
+
     this.index = client.index(INDEX);
     return this.index;
   }

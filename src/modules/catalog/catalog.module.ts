@@ -41,4 +41,3 @@ import { JkanimeSearchService } from './infrastructure/providers/jkanime/jkanime
   exports: [CatalogService],
 })
 export class CatalogModule {}
-

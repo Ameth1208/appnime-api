@@ -17,6 +17,8 @@ export class TmdbMetadataAdapter implements MetadataProvider {
 
   private toItem(item: {
     id: number;
+    original_title?: string;
+    original_name?: string;
     title?: string;
     name?: string;
     poster_path?: string | null;
@@ -30,6 +32,7 @@ export class TmdbMetadataAdapter implements MetadataProvider {
     return {
       id: String(item.id),
       title: item.title ?? item.name ?? '',
+      originalTitle: item.original_title ?? item.original_name ?? undefined,
       posterUrl: this.tmdb.imageUrl(item.poster_path),
       backdropUrl: this.tmdb.imageUrl(item.backdrop_path, 'w780'),
       year: yearRaw ? Number(yearRaw.slice(0, 4)) : undefined,
@@ -86,3 +89,4 @@ export class TmdbMetadataAdapter implements MetadataProvider {
     }));
   }
 }
+

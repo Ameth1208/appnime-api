@@ -27,9 +27,11 @@ export const envSchema = z.object({
   PUBLIC_BASE_URL: z.string().url(),
   CORS_ORIGINS: z.string().default('http://localhost:3000'),
   TMDB_API_KEY: z.string().default(''),
-  CATALOG_EMBED_SOURCES: z.string().default('vidsrc.xyz,autoembed,multiembed,vidlink'),
+  CATALOG_EMBED_SOURCES: z.string().default(''),
   MEILI_HOST: optionalUrl,
   MEILI_MASTER_KEY: z.string().default(''),
+  FLARESOLVERR_URL: optionalUrl,
+  CATALOG_PELIS24: z.string().default('on'),
 });
 
 export type AppEnv = z.infer<typeof envSchema>;
@@ -42,4 +44,5 @@ export function validateEnv(input: Record<string, unknown>) {
   }
   return parsed;
 }
+
 

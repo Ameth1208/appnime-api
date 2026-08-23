@@ -17,6 +17,7 @@ export interface Page<T> {
 }
 
 export interface MovieDetails extends ContentSummary {
+  originalTitle?: string;
   overview?: string;
   backdropUrl?: string;
   genres: string[];
@@ -38,6 +39,7 @@ export interface Season {
 }
 
 export interface SeriesDetails extends ContentSummary {
+  originalTitle?: string;
   overview?: string;
   backdropUrl?: string;
   genres: string[];
@@ -83,3 +85,4 @@ export interface TmdbKeyedProvider {
   resolveMovieByTmdb(id: number | string): Promise<ResolvedStream[]>;
   resolveEpisodeByTmdb(id: number | string, season: number, episode: number): Promise<ResolvedStream[]>;
 }
+

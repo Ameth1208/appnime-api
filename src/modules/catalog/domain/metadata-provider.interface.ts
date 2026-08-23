@@ -1,4 +1,5 @@
 export interface CatalogMetadataItem {
+  originalTitle?: string;
   id: string;
   title: string;
   posterUrl?: string;
@@ -32,4 +33,5 @@ export interface MetadataProvider {
   seriesDetails(id: string): Promise<CatalogMetadataItem & { genres: string[]; seasons: CatalogMetadataSeason[] }>;
   seasonEpisodes(id: string, season: number): Promise<CatalogMetadataEpisode[]>;
 }
+
 

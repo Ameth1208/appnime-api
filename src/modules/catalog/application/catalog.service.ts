@@ -160,6 +160,7 @@ export class CatalogService {
       providerId: this.metadata.id,
       type: 'movie',
       title: d.title,
+      originalTitle: d.originalTitle,
       overview: d.overview,
       posterUrl: d.posterUrl,
       backdropUrl: d.backdropUrl,
@@ -183,6 +184,7 @@ export class CatalogService {
       providerId: this.metadata.id,
       type: 'series',
       title: d.title,
+      originalTitle: d.originalTitle,
       overview: d.overview,
       posterUrl: d.posterUrl,
       backdropUrl: d.backdropUrl,
@@ -225,8 +227,9 @@ export class CatalogService {
           continue;
         }
         const details = await this.getMovie(id);
-        const match = await this.findInProvider(
-          () => (provider as MovieCatalogProvider).searchMovies(details.title, 1),
+        const match = await this.findInProviderWithVariants(
+          (q) => (provider as MovieCatalogProvider).searchMovies(q, 1),
+          [details.title, details.originalTitle],
           details.title,
           details.year,
         );
@@ -254,8 +257,12 @@ export class CatalogService {
           continue;
         }
         const details = await this.getSeries(id);
-        const query = `${details.title} temporada ${season}`;
-        const match = await this.findInProvider(() => (provider as SeriesCatalogProvider).searchSeries(query, 1), details.title, details.year);
+        const match = await this.findInProviderWithVariants(
+          (q) => (provider as SeriesCatalogProvider).searchSeries(`${q} temporada ${season}`, 1),
+          [details.title, details.originalTitle],
+          details.title,
+          details.year,
+        );
         if (!match) continue;
         const streams = await (provider as SeriesCatalogProvider).resolveEpisode(match, season, episode);
         if (streams.length > 0) return streams;
@@ -280,6 +287,26 @@ export class CatalogService {
       year: item.year,
       rating: item.rating,
     };
+  }
+
+  /// Prueba varios títulos (español + original) contra el proveedor y
+  /// devuelve el id del mejor match. Los títulos nulos/duplicados se omiten.
+  private async findInProviderWithVariants(
+    searchFn: (query: string) => Promise<Page<ContentSummary>>,
+    titles: (string | undefined)[],
+    referenceTitle: string,
+    year?: number,
+  ): Promise<string | null> {
+    const variants = [...new Set(titles.filter((t): t is string => Boolean(t?.trim())))];
+    for (const variant of variants) {
+      try {
+        const match = await this.findInProvider(() => searchFn(variant), referenceTitle, year);
+        if (match) return match;
+      } catch {
+        continue;
+      }
+    }
+    return null;
   }
 
   private async findInProvider(searchFn: () => Promise<Page<ContentSummary>>, title: string, year?: number): Promise<string | null> {
