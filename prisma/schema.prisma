@@ -494,6 +494,43 @@ model WatchProgress {
 
   @@unique([userId, sourceId, contentUrl])
   @@index([userId, updatedAt])
+}
+
+/// Registra cómo se resolvió el stream para cada contenido por usuario.
+/// Cache global de resoluciones de stream compartida entre todos los usuarios.
+/// Una entrada por contenido+idioma. Si cualquier usuario ya resolvió E1 en
+/// latino, el siguiente que quiera latino carga instantáneamente.
+///
+/// Guarda TODO lo necesario para:
+/// - Saber qué idiomas de audio tiene cada título
+/// - Saber qué subtítulos están disponibles y en qué idiomas
+/// - Cargar instantáneamente desde cache si ya se resolvió antes (<30 min)
+/// - Hacer fallback automático si el proveedor anterior falló
+/// - Analizar qué proveedores funcionan mejor por tipo de contenido
+model StreamResolution {
+  id            String   @id @default(uuid())
+  tmdbId        String   // TMDB ID o slug ("5920", "spy-x-family")
+  contentType   String   // movie | series | anime
+  seasonNum     Int?     // Temporada (null para películas)
+  episodeNum    Int?     // Episodio (null para películas)
+  // Audio
+  language      String   // "Español Latino", "Español", "Inglés", "Japonés"
+  // Subtítulos disponibles en este stream
+  hasSubs       Boolean  @default(false)
+  subLanguages  String[] @default([]) // ["Español", "English", "日本語"]
+  // Proveedor que resolvió exitosamente
+  providerId    String   // "nsrplay", "unlimplay", "vidlink", "jkanime"
+  serverName    String   // "streamwish", "Uqload", "vidhide"
+  resolvedUrl   String   // Última URL del stream que funcionó
+  // Métricas de calidad/resolución
+  quality       String?  // "1080p", "720p" (si se conoce)
+  fallbackUsed  Boolean  @default(false) // true si el primer proveedor falló
+  attempts      Int      @default(1) // Cuántos providers se intentaron
+  lastPlayedAt  DateTime @default(now())
+  createdAt     DateTime @default(now())
+
+  @@unique([tmdbId, contentType, seasonNum, episodeNum, language])
+  @@index([tmdbId, lastPlayedAt])
 }model ContentLike {
   id          String   @id @default(uuid())
   userId      String
@@ -614,3 +651,5 @@ model Promotion {
 
   @@index([active, expiresAt])
 }
+
+

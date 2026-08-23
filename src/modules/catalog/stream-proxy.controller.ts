@@ -59,28 +59,30 @@ export class StreamProxyController {
         return;
       }
 
+      // Usar la URL FINAL después de redirects como base para resolver
+      // rutas relativas en el playlist HLS.
+      const finalUrl = upstream.url || url;
+
       const contentType =
         upstream.headers.get('content-type') ?? '';
 
-      // Detectar si es un playlist HLS para reescribir las URLs internas.
+      const bodyText = await upstream.text();
+
       const isM3u8 =
         contentType.includes('mpegurl') ||
-        contentType.includes('text/plain') ||
-        url.includes('.m3u8');
+        finalUrl.includes('.m3u8') ||
+        bodyText.trimStart().startsWith('#EXTM3U');
 
-      if (isM3u8) {
-        let body = await upstream.text();
-        // Verificar que realmente sea HLS.
-        if (!body.trimStart().startsWith('#EXTM3U')) {
-          res.status(502).send('Not an HLS playlist');
-          return;
-        }
-        body = this.rewriteHls(body, url, referer);
+      if (isM3u8 && bodyText.trimStart().startsWith('#EXTM3U')) {
+        const publicBase =
+          process.env.PUBLIC_BASE_URL ?? 'http://localhost:4000';
+        const rewritten = this.rewriteHls(bodyText, finalUrl, referer, publicBase);
         res.set({
           'Content-Type': 'application/vnd.apple.mpegurl',
           'Cache-Control': 'no-cache',
+          'Access-Control-Allow-Origin': '*',
         });
-        res.send(body);
+        res.send(rewritten);
         return;
       }
 
@@ -99,26 +101,29 @@ export class StreamProxyController {
     }
   }
 
-  /// Reescribe las líneas de un playlist HLS para que cada segmento pase por
-  /// este mismo proxy. Esto permite que el player reproduzca contenido de
-  /// CDNs que bloquean conexiones directas sin navegador.
-  private rewriteHls(content: string, baseUrl: string, referer?: string): string {
+  private rewriteHls(
+    content: string,
+    baseUrl: string,
+    referer: string | undefined,
+    proxyBase: string,
+  ): string {
     return content
       .split('\n')
       .map((line) => {
         const trimmed = line.trim();
         if (!trimmed) return line;
-        if (trimmed.startsWith('#')) {
-          // Reescribir sub-playlists embebidas (#EXT-X-STREAM-INF seguido de URL)
+        if (trimmed.startsWith('#EXT-X-STREAM-INF')) {
+          // Guardar para procesar la URL de la siguiente línea.
           return line;
         }
-        // Línea de segmento o sub-playlist: envolver en proxy.
+        if (trimmed.startsWith('#')) return line;
         try {
+          // Resolver la URL relativa contra el CDN real (baseUrl).
           const abs = new URL(trimmed, baseUrl).toString();
           const ref = referer
             ? `&referer=${encodeURIComponent(referer)}`
             : '';
-          return `${process.env.PUBLIC_BASE_URL ?? 'http://localhost:4000'}/api/v1/catalog/stream/proxy?url=${encodeURIComponent(abs)}${ref}`;
+          return `${proxyBase}/api/v1/catalog/stream/proxy?url=${encodeURIComponent(abs)}${ref}`;
         } catch {
           return line;
         }

@@ -13,6 +13,7 @@ import { buildCatalogProviders, type AnyCatalogProvider } from './infrastructure
 import { buildMetadataProvider } from './infrastructure/metadata/metadata.factory';
 import { CatalogSearchService } from './infrastructure/search/catalog-search.service';
 import { JkanimeSearchService } from './infrastructure/providers/jkanime/jkanime-search.service';
+import { StreamResolutionService } from './infrastructure/providers/stream-resolution.service';
 import { JkanimeCatalogService } from './infrastructure/providers/jkanime/jkanime-catalog.service';
 import { JkAnimeAdapter } from './infrastructure/providers/jkanime/jkanime.adapter';
 import { AdultFilterMiddleware } from './adult-filter.middleware';
@@ -23,6 +24,7 @@ import { AdultFilterMiddleware } from './adult-filter.middleware';
     TmdbService,
     CatalogSearchService,
     JkanimeSearchService,
+    StreamResolutionService,
     JkanimeCatalogService,
     {
       provide: MOVIE_PROVIDERS,
@@ -50,6 +52,7 @@ export class CatalogModule implements NestModule {
     consumer.apply(AdultFilterMiddleware).forRoutes('v1/catalog');
   }
 }
+
 
 
 

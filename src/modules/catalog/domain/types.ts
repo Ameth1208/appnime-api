@@ -50,6 +50,7 @@ export interface SeriesDetails extends ContentSummary {
 
 export interface ResolvedStream {
   url: string;
+  language?: string;
   kind: 'hls' | 'mp4' | 'embed';
   quality?: string;
   server: string;
@@ -87,5 +88,6 @@ export interface TmdbKeyedProvider {
   resolveMovieByTmdb(id: number | string): Promise<ResolvedStream[]>;
   resolveEpisodeByTmdb(id: number | string, season: number, episode: number): Promise<ResolvedStream[]>;
 }
+
 
 

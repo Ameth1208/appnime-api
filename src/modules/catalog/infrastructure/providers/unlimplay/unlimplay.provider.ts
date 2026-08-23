@@ -11,6 +11,10 @@ import { JsUnpacker } from '../../extractors/js-unpacker';
 import type { ResolvedStream, TmdbKeyedProvider } from '../../../domain/types';
 
 const UNLIMPLAY = 'https://unlimplay.com';
+
+function capitalizeLang(s: string): string {
+  return s.replace(/\b\w/g, (ch) => ch.toUpperCase());
+}
 const NSRPLAY = 'https://nsrplay.space';
 
 interface EmbedsData {
@@ -138,7 +142,7 @@ export class UnlimplayCatalogProvider implements TmdbKeyedProvider {
               url: c.url.replace(/\\\//g, '/'),
               kind: 'hls',
               quality: 'auto',
-              server: `${c.lang} · directo`,
+              server: `${capitalizeLang(c.lang)} · directo`,
               providerId: this.id,
               headers: { referer: `${UNLIMPLAY}/` },
             },
@@ -152,12 +156,12 @@ export class UnlimplayCatalogProvider implements TmdbKeyedProvider {
         // PRIORIDAD 1: Desempaquetar JS packed (Dean Edwards) que contiene el m3u8.
         const packedUrls = JsUnpacker.extractFromPacked(source.body);
         if (packedUrls.length > 0) {
-          this.logger.log(`unlimplay ${c.lang}/${c.server}: ${packedUrls.length} URLs from packed JS`);
+          this.logger.log(`unlimplay ${capitalizeLang(c.lang)}/${c.server}: ${packedUrls.length} URLs from packed JS`);
           return packedUrls.map((u) => ({
             url: u,
             kind: (u.includes('.m3u8') ? 'hls' : 'mp4') as ResolvedStream['kind'],
             quality: 'auto' as const,
-            server: `${c.lang} · ${c.server}`,
+            server: `${capitalizeLang(c.lang)} · ${c.server}`,
             providerId: this.id,
           }));
         }
@@ -172,7 +176,7 @@ export class UnlimplayCatalogProvider implements TmdbKeyedProvider {
               url: directM3u8[0],
               kind: 'hls',
               quality: 'auto',
-              server: `${c.lang} · ${c.server}`,
+              server: `${capitalizeLang(c.lang)} · ${c.server}`,
               providerId: this.id,
               headers: { referer: new URL(source.finalUrl).origin },
             },
@@ -184,7 +188,7 @@ export class UnlimplayCatalogProvider implements TmdbKeyedProvider {
         const resolved = await extractor.resolve(source.finalUrl, this.id);
         return resolved.map((s) => ({
           ...s,
-          server: `${c.lang} · ${c.server}`,
+          server: `${capitalizeLang(c.lang)} · ${c.server}`,
         }));
       }),
     );
@@ -220,12 +224,12 @@ export class UnlimplayCatalogProvider implements TmdbKeyedProvider {
           const directMatch = html.match(/https?:\/\/[^"'\s<>]+\.m3u8[^"'\s<>]*/);
           if (directMatch) urls.push(directMatch[0]);
           if (urls.length > 0) {
-            this.logger.log(`unlimplay FS ${c.lang}/${c.server}: ${urls.length} URLs`);
+            this.logger.log(`unlimplay FS ${capitalizeLang(c.lang)}/${c.server}: ${urls.length} URLs`);
             return urls.map((u) => ({
               url: u,
               kind: (u.includes('.m3u8') ? 'hls' : 'mp4') as ResolvedStream['kind'],
               quality: 'auto',
-              server: `${c.lang} · ${c.server}`,
+              server: `${capitalizeLang(c.lang)} · ${c.server}`,
               providerId: this.id,
             }));
           }
@@ -262,4 +266,7 @@ export class UnlimplayCatalogProvider implements TmdbKeyedProvider {
     return this.generic;
   }
 }
+
+
+
 
