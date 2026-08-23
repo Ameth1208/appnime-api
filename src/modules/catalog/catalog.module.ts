@@ -1,6 +1,7 @@
-import { Module } from '@nestjs/common';
+import { Module, NestModule, MiddlewareConsumer } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { CatalogController } from './catalog.controller';
+import { StreamProxyController } from './stream-proxy.controller';
 import {
   CatalogService,
   METADATA_PROVIDER,
@@ -14,9 +15,10 @@ import { CatalogSearchService } from './infrastructure/search/catalog-search.ser
 import { JkanimeSearchService } from './infrastructure/providers/jkanime/jkanime-search.service';
 import { JkanimeCatalogService } from './infrastructure/providers/jkanime/jkanime-catalog.service';
 import { JkAnimeAdapter } from './infrastructure/providers/jkanime/jkanime.adapter';
+import { AdultFilterMiddleware } from './adult-filter.middleware';
 
 @Module({
-  controllers: [CatalogController],
+  controllers: [CatalogController, StreamProxyController],
   providers: [
     TmdbService,
     CatalogSearchService,
@@ -24,15 +26,15 @@ import { JkAnimeAdapter } from './infrastructure/providers/jkanime/jkanime.adapt
     JkanimeCatalogService,
     {
       provide: MOVIE_PROVIDERS,
-      inject: [ConfigService, JkanimeCatalogService],
-      useFactory: (config: ConfigService, jk: JkanimeCatalogService): AnyCatalogProvider[] =>
-        buildCatalogProviders(config, jk).filter((p) => p.supportedTypes.includes('movie')),
+      inject: [ConfigService],
+      useFactory: (config: ConfigService): AnyCatalogProvider[] =>
+        buildCatalogProviders(config).filter((p) => p.supportedTypes.includes('movie')),
     },
     {
       provide: SERIES_PROVIDERS,
-      inject: [ConfigService, JkanimeCatalogService],
-      useFactory: (config: ConfigService, jk: JkanimeCatalogService): AnyCatalogProvider[] =>
-        buildCatalogProviders(config, jk).filter((p) => p.supportedTypes.includes('series')),
+      inject: [ConfigService],
+      useFactory: (config: ConfigService): AnyCatalogProvider[] =>
+        buildCatalogProviders(config).filter((p) => p.supportedTypes.includes('series')),
     },
     {
       provide: METADATA_PROVIDER,
@@ -43,5 +45,14 @@ import { JkAnimeAdapter } from './infrastructure/providers/jkanime/jkanime.adapt
   ],
   exports: [CatalogService],
 })
-export class CatalogModule {}
+export class CatalogModule implements NestModule {
+  configure(consumer: MiddlewareConsumer) {
+    consumer.apply(AdultFilterMiddleware).forRoutes('v1/catalog');
+  }
+}
+
+
+
+
+
 

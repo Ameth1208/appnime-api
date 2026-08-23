@@ -27,12 +27,14 @@ export class TmdbMetadataAdapter implements MetadataProvider {
     release_date?: string;
     first_air_date?: string;
     overview?: string;
+    genre_ids?: number[];
   }): CatalogMetadataItem {
     const yearRaw = item.release_date ?? item.first_air_date;
     return {
       id: String(item.id),
       title: item.title ?? item.name ?? '',
       originalTitle: item.original_title ?? item.original_name ?? undefined,
+      genreIds: item.genre_ids,
       posterUrl: this.tmdb.imageUrl(item.poster_path),
       backdropUrl: this.tmdb.imageUrl(item.backdrop_path, 'w780'),
       year: yearRaw ? Number(yearRaw.slice(0, 4)) : undefined,
@@ -55,6 +57,14 @@ export class TmdbMetadataAdapter implements MetadataProvider {
 
   async searchSeries(query: string, page: number): Promise<CatalogMetadataItem[]> {
     return (await this.tmdb.seriesSearch(query, page)).results.map((r) => this.toItem(r));
+  }
+
+  async seriesAnimePopular(page: number): Promise<CatalogMetadataItem[]> {
+    return (await this.tmdb.seriesAnime(page)).results.map((r) => this.toItem(r));
+  }
+
+  async seriesAnimeSearch(query: string, page: number): Promise<CatalogMetadataItem[]> {
+    return (await this.tmdb.seriesAnimeSearch(query, page)).results.map((r) => this.toItem(r));
   }
 
   async movieDetails(id: string): Promise<CatalogMetadataItem & { genres: string[]; runtimeMinutes?: number }> {
@@ -89,4 +99,6 @@ export class TmdbMetadataAdapter implements MetadataProvider {
     }));
   }
 }
+
+
 

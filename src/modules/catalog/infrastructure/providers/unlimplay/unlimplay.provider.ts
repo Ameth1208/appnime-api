@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { curlFollow } from '../../http/flaresolverr.client';
 import {
   StreamWishExtractor,
@@ -6,6 +7,7 @@ import {
   DoodExtractor,
   GenericMediaExtractor,
 } from '../../extractors';
+import { JsUnpacker } from '../../extractors/js-unpacker';
 import type { ResolvedStream, TmdbKeyedProvider } from '../../../domain/types';
 
 const UNLIMPLAY = 'https://unlimplay.com';
@@ -20,10 +22,15 @@ export class UnlimplayCatalogProvider implements TmdbKeyedProvider {
   readonly supportsTmdbIds = true as const;
   readonly supportedTypes: ('movie' | 'series')[] = ['movie', 'series'];
   private readonly logger = new Logger(UnlimplayCatalogProvider.name);
+  private readonly flareUrl: string;
   private readonly streamWish = new StreamWishExtractor();
   private readonly filemoon = new FilemoonExtractor();
   private readonly dood = new DoodExtractor();
   private readonly generic = new GenericMediaExtractor();
+
+  constructor(config: ConfigService) {
+    this.flareUrl = config.get<string>('FLARESOLVERR_URL') ?? '';
+  }
 
   /// Cache de streams resueltos (10 min).
   private readonly resolved = new Map<string, { streams: ResolvedStream[]; at: number }>();
@@ -141,14 +148,25 @@ export class UnlimplayCatalogProvider implements TmdbKeyedProvider {
         // Otros servidores: sigue redirects y usa extractor apropiado.
         const source = await curlFollow(c.url, UNLIMPLAY, 15000);
         const hint = source.finalUrl + ' ' + source.body;
-        let extractor = this.extractorFor(hint);
 
-        // Si el redirect lleva a una página que contiene m3u8 directo,
-        // extraerlo sin extractor.
+        // PRIORIDAD 1: Desempaquetar JS packed (Dean Edwards) que contiene el m3u8.
+        const packedUrls = JsUnpacker.extractFromPacked(source.body);
+        if (packedUrls.length > 0) {
+          this.logger.log(`unlimplay ${c.lang}/${c.server}: ${packedUrls.length} URLs from packed JS`);
+          return packedUrls.map((u) => ({
+            url: u,
+            kind: (u.includes('.m3u8') ? 'hls' : 'mp4') as ResolvedStream['kind'],
+            quality: 'auto' as const,
+            server: `${c.lang} · ${c.server}`,
+            providerId: this.id,
+          }));
+        }
+
+        // PRIORIDAD 2: m3u8 directo en el HTML sin unpacking.
         const directM3u8 = source.body.match(
           /https?:\/\/[^"'\s<>]+\.m3u8[^"'\s<>]*/,
         );
-        if (directM3u8 && !extractor.canHandle(source.finalUrl)) {
+        if (directM3u8) {
           return [
             {
               url: directM3u8[0],
@@ -161,6 +179,8 @@ export class UnlimplayCatalogProvider implements TmdbKeyedProvider {
           ];
         }
 
+        // PRIORIDAD 3: extractores conocidos.
+        const extractor = this.extractorFor(hint);
         const resolved = await extractor.resolve(source.finalUrl, this.id);
         return resolved.map((s) => ({
           ...s,
@@ -178,6 +198,42 @@ export class UnlimplayCatalogProvider implements TmdbKeyedProvider {
       }
       return r.value;
     });
+
+    // FALLBACK: si nada funcionó con curl, usa FlareSolverr (Chrome real)
+    // para renderizar las páginas JS y extraer el m3u8 del contenido.
+    if (streams.length === 0 && this.flareUrl) {
+      this.logger.log('unlimplay: intentando via FlareSolverr...');
+      const fsCandidates = candidates.filter((c) => !c.url.includes('netu')).slice(0, 4);
+      for (const c of fsCandidates) {
+        try {
+          const res = await fetch(`${this.flareUrl}/v1`, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ cmd: 'request.get', url: c.url, maxTimeout: 60000 }),
+            signal: AbortSignal.timeout(90000),
+          });
+          if (!res.ok) continue;
+          const json = (await res.json()) as { solution?: { response?: string } };
+          const html = json.solution?.response ?? '';
+          if (!html) continue;
+          const urls = JsUnpacker.extractFromPacked(html);
+          const directMatch = html.match(/https?:\/\/[^"'\s<>]+\.m3u8[^"'\s<>]*/);
+          if (directMatch) urls.push(directMatch[0]);
+          if (urls.length > 0) {
+            this.logger.log(`unlimplay FS ${c.lang}/${c.server}: ${urls.length} URLs`);
+            return urls.map((u) => ({
+              url: u,
+              kind: (u.includes('.m3u8') ? 'hls' : 'mp4') as ResolvedStream['kind'],
+              quality: 'auto',
+              server: `${c.lang} · ${c.server}`,
+              providerId: this.id,
+            }));
+          }
+        } catch {
+          continue;
+        }
+      }
+    }
 
     // Orden final: latino primero, HLS primero, calidad descendente.
     const langRank = (s: ResolvedStream) => {
@@ -206,3 +262,4 @@ export class UnlimplayCatalogProvider implements TmdbKeyedProvider {
     return this.generic;
   }
 }
+

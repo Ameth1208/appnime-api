@@ -82,26 +82,51 @@ export class NsrPlayCatalogProvider implements TmdbKeyedProvider {
 
     // Resolver en paralelo.
     const results = await Promise.allSettled(
-      eligible.map(async (server): Promise<ResolvedStream> => {
+      eligible.map(async (server): Promise<ResolvedStream[]> => {
         const resolveRes = await fetch(
           `${NSRPLAY}/api/v1/embed/resolve?token=${server.token}`,
           { headers: UA, signal: AbortSignal.timeout(15000) },
         );
         if (!resolveRes.ok) throw new Error(`HTTP ${resolveRes.status}`);
         const rj = (await resolveRes.json()) as { success?: boolean; data?: NsrResolveData };
-        if (!rj.success || !rj.data?.playUrl) throw new Error('no playUrl');
-        return {
-          url: rj.data.playUrl,
-          kind: 'hls',
-          quality: 'auto',
-          server: `${server.language} · ${server.name}`,
-          providerId: this.id,
+        if (!rj.success || !rj.data) throw new Error('no resolve data');
+        const langLabel = `${server.language} · ${server.name}`;
+        const candidates: ResolvedStream[] = [];
+
+        // Envolver TODAS las URLs a través de nuestro proxy para evitar
+        // bloqueos del CDN hacia el player.
+        const proxyWrap = (rawUrl: string): string => {
+          const publicBase = process.env.PUBLIC_BASE_URL ?? 'http://localhost:4000';
+          return `${publicBase}/api/v1/catalog/stream/proxy?url=${encodeURIComponent(rawUrl)}&referer=${encodeURIComponent('https://nsrplay.space/')}`;
         };
+
+        if (rj.data.directUrl) {
+          candidates.push({
+            url: proxyWrap(rj.data.directUrl) as unknown as ResolvedStream['url'],
+            urlIsProxy: true,
+            kind: 'hls',
+            quality: 'auto',
+            server: `${langLabel} · directo`,
+            providerId: this.id,
+          } as unknown as ResolvedStream);
+        }
+        if (rj.data.playUrl) {
+          candidates.push({
+            url: proxyWrap(rj.data.playUrl) as unknown as ResolvedStream['url'],
+            urlIsProxy: true,
+            kind: 'hls',
+            quality: 'auto',
+            server: `${langLabel} · proxy`,
+            providerId: this.id,
+          } as unknown as ResolvedStream);
+        }
+        if (candidates.length === 0) throw new Error('no stream URLs');
+        return candidates;
       }),
     );
 
     const streams = results
-      .flatMap((r) => (r.status === 'fulfilled' ? [r.value] : []))
+      .flatMap((r) => (r.status === 'fulfilled' ? r.value : []))
       .sort((a, b) => {
         const la = langPriority.indexOf((a.server ?? '').split(' · ')[0].toLowerCase()) + 1 || 99;
         const lb = langPriority.indexOf((b.server ?? '').split(' · ')[0].toLowerCase()) + 1 || 99;
@@ -111,3 +136,6 @@ export class NsrPlayCatalogProvider implements TmdbKeyedProvider {
     return streams;
   }
 }
+
+
+

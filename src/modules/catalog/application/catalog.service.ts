@@ -173,7 +173,17 @@ export class CatalogService {
   }
 
   async getSeries(id: string): Promise<SeriesDetails> {
-    const d = await this.metadata.seriesDetails(String(id));
+    let d;
+    try {
+      d = await this.metadata.seriesDetails(String(id));
+    } catch {
+      // Fallback: el id puede ser un slug de anime ("spy-x-family").
+      // Lo tratamos como título y buscamos en TMDB para obtener metadatos.
+      const titleFromSlug = String(id).replace(/-/g, ' ').trim();
+      const results = await this.metadata.searchSeries(titleFromSlug, 1);
+      if (results.length === 0) throw new NotFoundException({ code: 'SERIES_NOT_FOUND' });
+      d = await this.metadata.seriesDetails(results[0].id);
+    }
     const seasonNumbers = d.seasons.map((s) => s.number);
     const episodesBySeason = await Promise.all(
       seasonNumbers.map((n) =>
@@ -337,6 +347,7 @@ export class CatalogService {
     return chosen?.id ?? null;
   }
 }
+
 
 
 

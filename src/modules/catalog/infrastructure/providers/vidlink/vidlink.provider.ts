@@ -182,7 +182,7 @@ export class VidlinkCatalogProvider implements TmdbKeyedProvider {
           : stream.playlist,
         kind: 'hls',
         quality: 'auto',
-        server: 'vidlink-hls',
+        server: 'Inglés · vidlink-hls',
         providerId: this.id,
         headers: stream.headers,
       });
@@ -194,7 +194,7 @@ export class VidlinkCatalogProvider implements TmdbKeyedProvider {
         url: q.url,
         kind: 'mp4',
         quality: quality.endsWith('p') ? quality : `${quality}p`,
-        server: 'vidlink-mp4',
+        server: 'Inglés · vidlink-mp4',
         providerId: this.id,
         headers: Object.keys(q.headers ?? {}).length > 0 ? q.headers : { 'user-agent': 'Lavf/60.3.100' },
       });
@@ -203,7 +203,7 @@ export class VidlinkCatalogProvider implements TmdbKeyedProvider {
           url: this.proxyUrl(q.url, q.headers ?? {}),
           kind: 'mp4',
           quality: quality.endsWith('p') ? quality : `${quality}p`,
-          server: 'vidlink-proxy',
+          server: 'Inglés · vidlink-proxy',
           providerId: this.id,
         });
       }
@@ -244,6 +244,7 @@ export class VidlinkCatalogProvider implements TmdbKeyedProvider {
     };
   }
 }
+
 
 
 

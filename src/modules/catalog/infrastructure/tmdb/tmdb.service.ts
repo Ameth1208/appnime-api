@@ -25,6 +25,7 @@ export interface RawTmdbItem {
   overview?: string;
   popularity?: number;
   genre_ids?: number[];
+  adult?: boolean;
 }
 
 interface RawTmdbDetail extends RawTmdbItem {
@@ -49,9 +50,14 @@ export interface RawEpisode {
 export class TmdbService {
   private readonly apiKey: string;
   private readonly cache = new TtlCache<unknown>(10 * 60 * 1000);
+  private _adultMode = false;
 
   constructor(config: ConfigService) {
     this.apiKey = config.get<string>('TMDB_API_KEY') ?? '';
+  }
+
+  set adultMode(value: boolean) {
+    this._adultMode = value;
   }
 
   get enabled(): boolean {
@@ -59,7 +65,12 @@ export class TmdbService {
   }
 
   private async get<T>(path: string, params: Record<string, string> = {}): Promise<T> {
-    const query = new URLSearchParams({ api_key: this.apiKey, language: 'es-MX', ...params });
+    const query = new URLSearchParams({
+      api_key: this.apiKey,
+      language: 'es-MX',
+      include_adult: this._adultMode ? 'true' : 'false',
+      ...params,
+    });
     const url = `${TMDB_BASE}${path}?${query.toString()}`;
     return this.cache.wrap(url, () => httpGetJson<T>(url)) as Promise<T>;
   }
@@ -87,6 +98,29 @@ export class TmdbService {
     return this.get<TmdbPage<RawTmdbItem>>('/tv/popular', { page: String(page) });
   }
 
+  /// Anime: animación japonesa ordenada por popularidad.
+  seriesAnime(page: number): Promise<TmdbPage<RawTmdbItem>> {
+    return this.get<TmdbPage<RawTmdbItem>>('/discover/tv', {
+      page: String(page),
+      with_genres: '16',
+      with_original_language: 'ja',
+      without_keywords: '198385,378816,298666',
+      sort_by: 'popularity.desc',
+      'vote_count.gte': '20',
+    });
+  }
+
+  /// Búsqueda de anime dentro del catálogo de animación japonesa.
+  seriesAnimeSearch(query: string, page: number): Promise<TmdbPage<RawTmdbItem>> {
+    return this.get<TmdbPage<RawTmdbItem>>('/search/tv', {
+      query,
+      page: String(page),
+      with_genres: '16',
+      with_original_language: 'ja',
+      without_keywords: '198385,378816,298666',
+    });
+  }
+
   seriesTopRated(page: number): Promise<TmdbPage<RawTmdbItem>> {
     return this.get<TmdbPage<RawTmdbItem>>('/tv/top_rated', { page: String(page) });
   }
@@ -111,6 +145,11 @@ export class TmdbService {
     return this.get<{ episodes: RawEpisode[] }>(`/tv/${id}/season/${season}`);
   }
 }
+
+
+
+
+
 
 
 

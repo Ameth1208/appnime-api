@@ -7,6 +7,7 @@ export interface CatalogMetadataItem {
   year?: number;
   rating?: number;
   overview?: string;
+  genreIds?: number[];
 }
 
 export interface CatalogMetadataSeason {
