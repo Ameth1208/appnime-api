@@ -35,12 +35,9 @@ RUN mkdir -p /app/storage && chown -R node:node /app/storage
 # Generate Prisma client for the production image
 RUN npx prisma generate
 
-# Copy entrypoint script (applies prisma db push before starting)
-COPY entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh
-
 EXPOSE 4000
 ENV NODE_ENV=production
 
-ENTRYPOINT ["/entrypoint.sh"]
+# Aplica schema changes antes de arrancar el server
+CMD ["sh", "-c", "npx prisma db push --skip-generate && node dist/main.js"]
 
