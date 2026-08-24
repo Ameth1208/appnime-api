@@ -20,7 +20,7 @@ export const LEASE_TTL_MS: Record<string, number> = {
   voe: 10 * 60 * 1000,
   streamtape: 15 * 60 * 1000,
   vidlink: 45 * 60 * 1000,
-  nsrplay: 25 * 60 * 1000,
+  nsrplay: 5 * 60 * 1000, // sus tokens de stream-proxy viven muy poco
   default: 5 * 60 * 1000,
 };
 

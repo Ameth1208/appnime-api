@@ -26,7 +26,10 @@ export interface ResolvedLease extends PlaybackLease {
 }
 
 const MAX_LEASES = 3;
-const RESOLVE_TIMEOUT_MS = 25000;
+const RESOLVE_TIMEOUT_MS = 15000;
+/// Presupuesto total de una resolución: si se agota, devolvemos lo que haya
+/// (o vacío para que la app reintente) en vez de dejar al usuario colgado.
+const RESOLVE_DEADLINE_MS = 40000;
 
 /**
  * Orquestador de reproducción v2.
@@ -47,7 +50,7 @@ export class PlaybackService {
   private readonly activeLeases = new Map<string, { sourceId: string; expiresAt: number }>();
 
   /// Providers con discovery implementado.
-  private readonly knownProviders = ['nsrplay', 'unlimplay', 'vidlink'];
+  readonly knownProviders = ['nsrplay', 'unlimplay', 'vidlink'];
 
   constructor(
     private readonly registry: SourceRegistryService,
@@ -99,6 +102,7 @@ export class PlaybackService {
   // ── Interno ───────────────────────────────────────────────────────────────
 
   private async resolveOnce(req: ResolveRequest): Promise<ResolvedLease[]> {
+    const deadline = Date.now() + RESOLVE_DEADLINE_MS;
     let didDiscover = false;
     let candidates = await this.registry.findCandidates({
       tmdbId: req.tmdbId,
@@ -120,10 +124,11 @@ export class PlaybackService {
       });
     }
 
-    const leases = await this.resolveCandidates(candidates, req.languageCode);
+    const leases = await this.resolveCandidates(candidates, deadline);
 
-    // Todo falló y no descubrimos en este request → re-discovery forzado.
-    if (leases.length === 0 && !didDiscover) {
+    // Todo falló y no descubrimos en este request → re-discovery forzado,
+    // solo si aún queda presupuesto de tiempo.
+    if (leases.length === 0 && !didDiscover && Date.now() < deadline) {
       this.logger.log(`todas las fuentes fallaron para ${req.tmdbId}; forzando re-discovery`);
       await this.discoverAndSave(req, { ignoreNegativeCache: true });
       candidates = await this.registry.findCandidates({
@@ -133,7 +138,7 @@ export class PlaybackService {
         episodeNum: req.episode,
         languageCode: req.languageCode,
       });
-      return this.resolveCandidates(candidates, req.languageCode);
+      return this.resolveCandidates(candidates, deadline);
     }
 
     return leases;
@@ -141,13 +146,18 @@ export class PlaybackService {
 
   private async resolveCandidates(
     candidates: SourceCandidate[],
-    languageCode?: string,
+    deadline: number,
   ): Promise<ResolvedLease[]> {
     const leases: ResolvedLease[] = [];
     const perLanguage = new Map<string, number>();
 
     for (const source of candidates) {
       if (leases.length >= MAX_LEASES) break;
+      // Presupuesto agotado: devolver lo que haya en vez de colgar al user.
+      if (Date.now() > deadline) {
+        this.logger.log('resolve: deadline alcanzado, devolviendo lo resuelto');
+        break;
+      }
       const usedForLang = perLanguage.get(source.languageCode) ?? 0;
       if (usedForLang >= 2) continue; // máximo 2 fuentes por idioma
 
@@ -185,7 +195,6 @@ export class PlaybackService {
         );
       }
     }
-    void languageCode;
 
     // Limpieza oportunista de leases vencidos.
     const now = Date.now();

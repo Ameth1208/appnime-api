@@ -1,4 +1,4 @@
-import { Controller, Get, Param, Post, Query } from '@nestjs/common';
+import { Controller, Get, NotFoundException, Param, Post, Query } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { CatalogService } from './application/catalog.service';
 import { TmdbService } from './infrastructure/tmdb/tmdb.service';
@@ -135,7 +135,10 @@ export class CatalogController {
     };
     const leases = await this.playback.resolve(req);
     if (leases.length === 0) {
-      return this.catalog.resolveEpisode(id, Number(season), Number(episode));
+      throw new NotFoundException({
+        code: 'NO_STREAMS_FOUND',
+        triedProviders: this.playback.knownProviders,
+      });
     }
     return CatalogController.toLegacyResponse(leases);
   }
@@ -145,7 +148,10 @@ export class CatalogController {
     const req: ResolveRequest = { tmdbId: id, contentType: 'movie', languageCode: lang || undefined };
     const leases = await this.playback.resolve(req);
     if (leases.length === 0) {
-      return this.catalog.resolveMovie(id);
+      throw new NotFoundException({
+        code: 'NO_STREAMS_FOUND',
+        triedProviders: this.playback.knownProviders,
+      });
     }
     return CatalogController.toLegacyResponse(leases);
   }
