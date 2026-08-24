@@ -19,10 +19,13 @@ interface EmbedsData {
 @Injectable()
 export class DiscoveryService {
   private readonly logger = new Logger(DiscoveryService.name);
+  private readonly flareUrl: string;
   /// Concurrency limit para no saturar FlareSolverr/providers.
   private static readonly PROVIDER_CONCURRENCY = 3;
 
-  constructor(private readonly config: ConfigService) {}
+  constructor(private readonly config: ConfigService) {
+    this.flareUrl = config.get<string>('FLARESOLVERR_URL') ?? '';
+  }
 
   async discoverAll(
     input: DiscoverInput,
@@ -78,15 +81,15 @@ export class DiscoveryService {
         ? `${UNLIMPLAY}/f/embed/movie/${input.tmdbId}`
         : `${UNLIMPLAY}/f/embed/tv/${input.tmdbId}/${input.season}/${input.episode}`;
 
-    const res = await fetch(embedUrl, {
-      headers: { 'user-agent': UA, referer: `${UNLIMPLAY}/` },
-      signal: AbortSignal.timeout(15000),
-      redirect: 'follow',
-    });
-    if (!res.ok) throw new Error(`embed HTTP ${res.status}`);
-    const html = await res.text();
-
-    const m = html.match(/(?:const |var |let )?EMBEDS\s*=\s*(\{[\s\S]*?\})\s*;/);
+    let html = await this.fetchEmbed(embedUrl);
+    let m = html.match(/(?:const |var |let )?EMBEDS\s*=\s*(\{[\s\S]*?\})\s*;/);
+    if (!m && this.flareUrl) {
+      // El IP del datacenter puede recibir una versión protegida por
+      // Cloudflare sin EMBEDS: renderizar con FlareSolverr y reintentar.
+      this.logger.log(`unlimplay discovery sin EMBEDS vía HTTP; probando FlareSolverr`);
+      html = await this.fetchEmbedViaFlareSolverr(embedUrl);
+      m = html.match(/(?:const |var |let )?EMBEDS\s*=\s*(\{[\s\S]*?\})\s*;/);
+    }
     if (!m) throw new Error('EMBEDS not found');
     let data: EmbedsData;
     try {
@@ -118,6 +121,28 @@ export class DiscoveryService {
     }
     // [] = provider alcanzable pero el título no está → negative cache larga.
     return sources;
+  }
+
+  private async fetchEmbed(url: string): Promise<string> {
+    const res = await fetch(url, {
+      headers: { 'user-agent': UA, referer: `${UNLIMPLAY}/` },
+      signal: AbortSignal.timeout(15000),
+      redirect: 'follow',
+    });
+    if (!res.ok) throw new Error(`embed HTTP ${res.status}`);
+    return res.text();
+  }
+
+  private async fetchEmbedViaFlareSolverr(url: string): Promise<string> {
+    const res = await fetch(`${this.flareUrl}/v1`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ cmd: 'request.get', url, maxTimeout: 60000 }),
+      signal: AbortSignal.timeout(90000),
+    });
+    if (!res.ok) throw new Error(`flaresolverr HTTP ${res.status}`);
+    const json = (await res.json()) as { solution?: { response?: string } };
+    return json.solution?.response ?? '';
   }
 
   // ── NSRPlay ───────────────────────────────────────────────────────────────

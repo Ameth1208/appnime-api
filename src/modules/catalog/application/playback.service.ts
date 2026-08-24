@@ -153,8 +153,13 @@ export class PlaybackService {
   ): Promise<ResolvedLease[]> {
     const leases: ResolvedLease[] = [];
     const perLanguage = new Map<string, number>();
+    const perProvider = new Map<string, number>();
 
-    for (const source of candidates) {
+    // Diversidad primero: un mejor candidato por idioma distinto, luego por
+    // provider distinto, y finalmente el resto por score.
+    const ordered = this.diversify(candidates);
+
+    for (const source of ordered) {
       if (leases.length >= MAX_LEASES) break;
       // Presupuesto agotado: devolver lo que haya en vez de colgar al user.
       if (Date.now() > deadline) {
@@ -163,6 +168,8 @@ export class PlaybackService {
       }
       const usedForLang = perLanguage.get(source.languageCode) ?? 0;
       if (usedForLang >= 2) continue; // máximo 2 fuentes por idioma
+      const usedForProvider = perProvider.get(source.providerId) ?? 0;
+      if (usedForProvider >= 2 && leases.length >= 2) continue;
 
       const started = Date.now();
       try {
@@ -191,6 +198,7 @@ export class PlaybackService {
           });
         }
         perLanguage.set(source.languageCode, usedForLang + 1);
+        perProvider.set(source.providerId, usedForProvider + 1);
       } catch (err) {
         const cls = await this.registry.recordFailure(source.id, err);
         this.logger.log(
@@ -206,6 +214,35 @@ export class PlaybackService {
     }
 
     return leases;
+  }
+
+  /// Reordena candidatos priorizando diversidad: ronda 1 = el mejor de cada
+  /// idioma distinto; ronda 2 = el mejor de cada provider aún sin usar; ronda
+  /// 3 = el resto por score. Así una serie con latino+subtitulado+inglés
+  /// devuelve las tres opciones aunque un provider tenga más servidores.
+  private diversify(candidates: SourceCandidate[]): SourceCandidate[] {
+    const pool = [...candidates];
+    const picked = new Set<string>();
+    const result: SourceCandidate[] = [];
+
+    for (const lang of new Set(pool.map((c) => c.languageCode))) {
+      const best = pool.find((c) => c.languageCode === lang && !picked.has(c.id));
+      if (best) {
+        result.push(best);
+        picked.add(best.id);
+      }
+    }
+    for (const provider of new Set(pool.map((c) => c.providerId))) {
+      const best = pool.find((c) => c.providerId === provider && !picked.has(c.id));
+      if (best) {
+        result.push(best);
+        picked.add(best.id);
+      }
+    }
+    for (const c of pool) {
+      if (!picked.has(c.id)) result.push(c);
+    }
+    return result;
   }
 
   private async discoverAndSave(
