@@ -1,13 +1,16 @@
-import { Controller, Get, Param, Query } from '@nestjs/common';
+import { Controller, Get, Param, Post, Query } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { CatalogService } from './application/catalog.service';
 import { TmdbService } from './infrastructure/tmdb/tmdb.service';
+import { PlaybackService, type ResolveRequest } from './application/playback.service';
+import type { ResolvedLease } from './application/playback.service';
 
 @Controller('v1/catalog')
 export class CatalogController {
   constructor(
     private readonly catalog: CatalogService,
     private readonly tmdb: TmdbService,
+    private readonly playback: PlaybackService,
     private readonly config: ConfigService,
   ) {}
 
@@ -71,11 +74,6 @@ export class CatalogController {
     return this.catalog.getMovie(id);
   }
 
-  @Get('movies/:id/resolve')
-  resolveMovie(@Param('id') id: string) {
-    return this.catalog.resolveMovie(id);
-  }
-
   // ── Series ────────────────────────────────────────────────────────────────
 
   @Get('series/popular')
@@ -99,13 +97,84 @@ export class CatalogController {
     return this.catalog.getSeasonEpisodes(id, Number(season));
   }
 
+  // ── Resolución de streams (v2: registry + discovery bajo demanda) ────────
+
+  /// Formato legacy-compatible (array plano) con campos estructurados
+  /// aditivos para clientes nuevos. No rompe la app actual.
+  private static toLegacyResponse(leases: ResolvedLease[]) {
+    return leases.map((l) => ({
+      // ── Contrato legacy ──
+      url: l.url,
+      kind: l.kind,
+      quality: l.quality,
+      server: `${l.languageName} · ${l.server}`,
+      providerId: l.provider,
+      ...(l.headers ? { headers: l.headers } : {}),
+      // ── Campos estructurados v2 ──
+      leaseId: l.leaseId,
+      language: { code: l.languageCode, name: l.languageName },
+      source: { provider: l.provider, server: l.server },
+      delivery: l.delivery,
+      expiresAt: l.expiresAt?.toISOString(),
+    }));
+  }
+
   @Get('series/:id/seasons/:season/episodes/:episode/resolve')
-  resolveEpisode(
+  async resolveEpisode(
     @Param('id') id: string,
     @Param('season') season: string,
     @Param('episode') episode: string,
+    @Query('lang') lang = 'es-419',
   ) {
-    return this.catalog.resolveEpisode(id, Number(season), Number(episode));
+    const req: ResolveRequest = {
+      tmdbId: id,
+      contentType: 'series',
+      season: Number(season),
+      episode: Number(episode),
+      languageCode: lang || undefined,
+    };
+    const leases = await this.playback.resolve(req);
+    if (leases.length === 0) {
+      return this.catalog.resolveEpisode(id, Number(season), Number(episode));
+    }
+    return CatalogController.toLegacyResponse(leases);
+  }
+
+  @Get('movies/:id/resolve')
+  async resolveMovie(@Param('id') id: string, @Query('lang') lang = 'es-419') {
+    const req: ResolveRequest = { tmdbId: id, contentType: 'movie', languageCode: lang || undefined };
+    const leases = await this.playback.resolve(req);
+    if (leases.length === 0) {
+      return this.catalog.resolveMovie(id);
+    }
+    return CatalogController.toLegacyResponse(leases);
+  }
+
+  /// Discovery anticipado SIN generar URLs/token (llamado por preload de la app).
+  @Get(['series/:id/seasons/:season/episodes/:episode/prepare', 'movies/:id/prepare'])
+  async prepare(
+    @Param('id') id: string,
+    @Param('season') season = '0',
+    @Param('episode') episode = '0',
+  ): Promise<{ discovered: number }> {
+    const isSeries = episode !== '0' && episode !== '';
+    return this.playback.prepare({
+      tmdbId: id,
+      contentType: isSeries ? 'series' : 'movie',
+      season: isSeries ? Number(season) : undefined,
+      episode: isSeries ? Number(episode) : undefined,
+    });
+  }
+
+  /// Feedback real de reproducción desde PlayerSession.
+  @Post('playback/:leaseId/success')
+  playbackSuccess(@Param('leaseId') leaseId: string) {
+    return { ok: this.playback.reportSuccess(leaseId) };
+  }
+
+  @Post('playback/:leaseId/failure')
+  playbackFailure(@Param('leaseId') leaseId: string, @Query('reason') reason?: string) {
+    return { ok: this.playback.reportFailure(leaseId, reason) };
   }
 }
 

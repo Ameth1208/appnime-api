@@ -91,3 +91,49 @@ export interface TmdbKeyedProvider {
 
 
 
+
+// ── Modelo de resolución v2: discover/resolve separados ─────────────────────
+
+export type StreamDelivery = 'direct' | 'playlist_proxy' | 'tunnel';
+
+/// Fuente descubierta en un provider. Identidad estable, SIN URLs efímeras.
+export interface DiscoveredSource {
+  languageCode: string;
+  languageName: string;
+  providerId: string;
+  serverId: string;
+  /// Dato del provider para re-resolver sin búsqueda (embed URL, slug, etc).
+  providerItemId?: string;
+  providerUrl?: string;
+  quality?: string;
+  hasSubs?: boolean;
+  subLanguages?: string[];
+  deliveryMode: StreamDelivery;
+}
+
+/// URL fresca + metadata de playback. Vida corta (segundos/minutos).
+export interface PlaybackLease {
+  url: string;
+  kind: 'hls' | 'mp4';
+  headers?: Record<string, string>;
+  quality?: string;
+  delivery: StreamDelivery;
+  expiresAt?: Date;
+}
+
+/// Input estándar para discovery.
+export interface DiscoverInput {
+  tmdbId: string;
+  contentType: ContentType | 'anime';
+  season?: number;
+  episode?: number;
+}
+
+/// DiscoveredSource ya resuelta contra un contenido concreto
+/// (lista para persistir en StreamSource).
+export interface ProviderDiscoveredSource extends DiscoveredSource {
+  tmdbId: string;
+  contentType: string;
+  seasonNum: number;
+  episodeNum: number;
+}

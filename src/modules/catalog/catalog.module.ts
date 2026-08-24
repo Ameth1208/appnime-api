@@ -17,6 +17,13 @@ import { StreamResolutionService } from './infrastructure/providers/stream-resol
 import { JkanimeCatalogService } from './infrastructure/providers/jkanime/jkanime-catalog.service';
 import { JkAnimeAdapter } from './infrastructure/providers/jkanime/jkanime.adapter';
 import { AdultFilterMiddleware } from './adult-filter.middleware';
+import { SourceRegistryService } from './application/source-registry.service';
+import { DiscoveryService } from './application/discovery.service';
+import { PlaybackService } from './application/playback.service';
+import { ResolverRegistry } from './infrastructure/providers/resolvers/resolver-registry';
+import { UnlimplaySourceResolver } from './infrastructure/providers/resolvers/unlimplay.resolver';
+import { VidlinkSourceResolver } from './infrastructure/providers/resolvers/vidlink.resolver';
+import { NsrPlaySourceResolver } from './infrastructure/providers/resolvers/nsrplay.resolver';
 
 @Module({
   controllers: [CatalogController, StreamProxyController],
@@ -43,6 +50,13 @@ import { AdultFilterMiddleware } from './adult-filter.middleware';
       inject: [ConfigService, TmdbService],
       useFactory: buildMetadataProvider,
     },
+    SourceRegistryService,
+    DiscoveryService,
+    UnlimplaySourceResolver,
+    VidlinkSourceResolver,
+    NsrPlaySourceResolver,
+    ResolverRegistry,
+    PlaybackService,
     CatalogService,
   ],
   exports: [CatalogService],

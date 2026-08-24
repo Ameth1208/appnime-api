@@ -531,7 +531,105 @@ model StreamResolution {
 
   @@unique([tmdbId, contentType, seasonNum, episodeNum, language])
   @@index([tmdbId, lastPlayedAt])
-}model ContentLike {
+}
+
+/// Fuente de stream CONOCIDA y persistente (dónde existe un título).
+///
+/// A diferencia de StreamResolution, NO guarda URLs efímeras: guarda la
+/// identidad estable (provider + server + item del provider) para poder
+/// re-resolver bajo demanda con un solo golpe al provider.
+model StreamSource {
+  id             String   @id @default(uuid())
+
+  tmdbId         String
+  contentType    String // movie | series | anime
+  seasonNum      Int      @default(0)
+  episodeNum     Int      @default(0)
+
+  languageCode   String // es-419, es, en, ja...
+  languageName   String // "Español Latino", "Inglés"...
+
+  providerId     String // nsrplay, unlimplay, vidlink
+  serverId       String // streamwish, filemoon, direct, vidlink...
+
+  /// Identidad dentro del provider para re-resolver sin búsqueda:
+  /// URL del embed/servidor, slug, etc.
+  providerItemId String?
+  providerUrl    String?
+
+  quality        String?
+  hasSubs        Boolean  @default(false)
+  subLanguages   String[] @default([])
+
+  /// direct | playlist_proxy | tunnel
+  deliveryMode   String   @default("direct")
+
+  enabled        Boolean  @default(true)
+
+  // Health / scoring
+  score                Float     @default(50)
+  successCount         Int       @default(0)
+  failureCount         Int       @default(0)
+  consecutiveFailures  Int       @default(0)
+  avgResolveMs         Int?
+  disabledUntil        DateTime?
+
+  lastSuccessAt DateTime?
+  lastFailureAt DateTime?
+  lastCheckedAt DateTime?
+  nextCheckAt   DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([tmdbId, contentType, seasonNum, episodeNum, languageCode, providerId, serverId])
+  @@index([tmdbId, contentType, seasonNum, episodeNum, languageCode, score])
+  @@index([nextCheckAt])
+}
+
+/// Mapeo TMDB → ID interno de un provider que no acepta TMDB directamente.
+/// Evita repetir búsquedas por título en cada descubrimiento.
+model ProviderContentMapping {
+  id                String   @id @default(uuid())
+
+  tmdbId            String
+  contentType       String
+
+  providerId        String
+
+  providerContentId String
+  providerSlug      String?
+  providerUrl       String?
+  confidence        Float    @default(1)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([tmdbId, contentType, providerId])
+  @@index([providerId, providerContentId])
+}
+
+/// Cache negativa: "el provider X no tiene este contenido" con re-check
+/// diferido. Evita golpear providers en vano por cada Play.
+model DiscoveryNegativeCache {
+  id          String   @id @default(uuid())
+
+  tmdbId      String
+  contentType String
+  seasonNum   Int      @default(0)
+  episodeNum  Int      @default(0)
+  providerId  String
+
+  reason      String   @default("not_found")
+
+  nextCheckAt DateTime @default(now())
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([tmdbId, contentType, seasonNum, episodeNum, providerId])
+  @@index([nextCheckAt])
+}
+model ContentLike {
   id          String   @id @default(uuid())
   userId      String
   sourceId    String

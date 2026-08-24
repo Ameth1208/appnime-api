@@ -15,6 +15,7 @@ import type {
 import type { CatalogMetadataItem, MetadataProvider } from '../domain/metadata-provider.interface';
 import { normalizeText, similarity } from './text-similarity';
 import type { AnyCatalogProvider } from '../infrastructure/providers/provider-factory';
+import { needsTunnel, wrapPlaylistProxy } from '../infrastructure/http/tunnel.util';
 import { StreamResolutionService } from '../infrastructure/providers/stream-resolution.service';
 import { CatalogSearchService } from '../infrastructure/search/catalog-search.service';
 
@@ -214,35 +215,13 @@ export class CatalogService {
   /// CDNs cuyos streams HLS llegan con lock de IP/ASN (el m3u8 solo sirve
   /// desde la IP que lo extrajo). Su tráfico debe tunelizarse por nuestro
   /// proxy (`stream/playlist?tunnel=1`) para reproducirse en el cliente.
-  private static readonly TUNNEL_HOST_SUFFIXES = [
-    'premilkyway.com', // streamwish / hglink
-    'streamwish.to',
-    'hglink.to',
-  ];
-
   /// Envuelve los HLS de hosts con lock de red en el playlist-proxy del
   /// backend. Los MP4 de vidlink y demás fuentes directas quedan intactos.
   private applyStreamTunnel(streams: ResolvedStream[]): ResolvedStream[] {
-    const base = (this.config.get<string>('PUBLIC_BASE_URL') ?? '').replace(/\/+$/, '');
-    if (!base) return streams;
     return streams.map((s) => {
-      if (s.kind !== 'hls') return s;
-      let host = '';
-      try {
-        host = new URL(s.url).hostname;
-      } catch {
-        return s;
-      }
-      const locked = CatalogService.TUNNEL_HOST_SUFFIXES.some(
-        (suffix) => host === suffix.trim() || host.endsWith(suffix.trim()),
-      );
-      if (!locked) return s;
-      const params = new URLSearchParams({
-        url: s.url,
-        referer: 'https://unlimplay.com/',
-        tunnel: '1',
-      });
-      return { ...s, url: `${base}/api/v1/catalog/stream/playlist?${params.toString()}` };
+      if (s.kind !== 'hls' || !needsTunnel(s.url)) return s;
+      const wrapped = wrapPlaylistProxy(s.url, 'https://unlimplay.com/', { tunnel: true });
+      return wrapped ? { ...s, url: wrapped, headers: undefined } : s;
     });
   }
 

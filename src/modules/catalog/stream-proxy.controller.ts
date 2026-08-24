@@ -1,6 +1,7 @@
-import { Controller, Get, Query, Res } from '@nestjs/common';
+import { Controller, Get, Headers, Query, Res } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { Response } from 'express';
+import { Readable } from 'node:stream';
 
 const ALLOWED_HOSTS = [
   'nsrplay.space',
@@ -58,12 +59,18 @@ export class StreamProxyController {
 
       // La URL final después de redirects = base para resolver relativas.
       const finalUrl = upstream.url || url;
-      let body = await upstream.text();
 
-      // Si no es HLS, devolver tal cual (podría ser redirect HTML).
-      if (!body.trimStart().startsWith('#EXTM3U')) {
-        res.status(502).send('Not an HLS playlist');
-        return;
+      // Decidir si es playlist por Content-Type ANTES de leer el body.
+      const contentType = upstream.headers.get('content-type') ?? '';
+      let body: string;
+      if (contentType.includes('mpegurl')) {
+        body = await upstream.text();
+      } else {
+        body = await upstream.text();
+        if (!body.trimStart().startsWith('#EXTM3U')) {
+          res.status(502).send('Not an HLS playlist');
+          return;
+        }
       }
 
       // Resolver TODAS las URLs relativas a absolutas contra el CDN real.
@@ -86,12 +93,17 @@ export class StreamProxyController {
   }
 
   /// Proxy para recursos que SÍ necesitan intermediario (tokens expirados,
-  /// CDNs que bloquean por IP, etc). Usar con moderación.
+  /// CDNs que bloquean por IP/ASN, etc).
+  ///
+  /// - Playlists HLS: se reescriben (relativas→absolutas y/o túnel).
+  /// - Binario (segmentos, MP4): STREAMING puro con soporte de Range para
+  ///   seeking; nunca se bufferiza el recurso completo en RAM.
   @Get('proxy')
   async proxy(
     @Query('url') url: string,
     @Query('referer') refererParam: string | undefined,
     @Query('tunnel') tunnelParam: string | undefined,
+    @Headers() headers: Record<string, string>,
     @Res() res: Response,
   ): Promise<void> {
     if (!url) {
@@ -101,20 +113,27 @@ export class StreamProxyController {
     const tunnel = tunnelParam === '1';
 
     try {
+      // Forward de Range/If-Range para seeking y streams MP4.
+      const range = headers['range'] ?? headers['Range'];
       const upstream = await fetch(url, {
-        headers: this.browserHeaders(refererParam),
+        headers: {
+          ...this.browserHeaders(refererParam),
+          ...(range ? { range } : {}),
+        },
         redirect: 'follow',
         signal: AbortSignal.timeout(30000),
       });
 
       const contentType = upstream.headers.get('content-type') ?? '';
+      const isHlsByType = contentType.includes('mpegurl');
+      const isHlsByUrl = /\.(m3u8)(\?|$)/i.test(upstream.url || url);
 
-      // Si es otro playlist HLS, resolverlo también.
-      const bodyText = await upstream.text();
-      if (
-        contentType.includes('mpegurl') ||
-        bodyText.trimStart().startsWith('#EXTM3U')
-      ) {
+      if (isHlsByType || isHlsByUrl) {
+        const bodyText = await upstream.text();
+        if (!bodyText.trimStart().startsWith('#EXTM3U')) {
+          res.status(502).send('Not an HLS playlist');
+          return;
+        }
         const finalUrl = upstream.url || url;
         let resolved = this.resolveRelativeUrls(bodyText, finalUrl);
         if (tunnel) resolved = this.tunnelizeUrls(resolved, refererParam);
@@ -123,18 +142,39 @@ export class StreamProxyController {
         return;
       }
 
-      // Binario directo (video segment, image, etc).
-      const buffer = Buffer.from(await upstream.arrayBuffer());
-      res.set({
+      // Binario: pipe del stream web → HTTP response sin bufferizar.
+      if (!upstream.body) {
+        res.status(502).send('Empty upstream body');
+        return;
+      }
+
+      const passthrough: Record<string, string> = {
         'Content-Type': contentType || 'application/octet-stream',
-        'Content-Length': String(buffer.length),
         'Access-Control-Allow-Origin': '*',
-      });
-      res.send(buffer);
-    } catch (err) {
-      res.status(502).send(
-        `Proxy error: ${err instanceof Error ? err.message : String(err)}`,
+      };
+      for (const h of ['content-length', 'content-range', 'accept-ranges']) {
+        const v = upstream.headers.get(h);
+        if (v) passthrough[h[0].toUpperCase() + h.slice(1)] = v;
+      }
+      res.status(upstream.status); // 200 o 206 Partial Content
+      res.set(passthrough);
+
+      const nodeStream = Readable.fromWeb(
+        upstream.body as import('node:stream/web').ReadableStream,
       );
+      nodeStream.pipe(res);
+      // Abortar el upstream si el cliente corta la descarga.
+      res.on('close', () => {
+        nodeStream.destroy();
+      });
+    } catch (err) {
+      if (!res.headersSent) {
+        res.status(502).send(
+          `Proxy error: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      } else {
+        res.destroy();
+      }
     }
   }
 
@@ -149,31 +189,11 @@ export class StreamProxyController {
         if (!trimmed) return line;
 
         // #EXT-X-STREAM-INF tiene URI="..." embebida
-        if (trimmed.startsWith('#EXT-X-STREAM-INF')) {
-          const uriMatch = line.match(/URI="([^"]+)"/);
-          if (uriMatch && !uriMatch[1].startsWith('http')) {
-            try {
-              const abs = new URL(uriMatch[1], baseUrl).toString();
-              return line.replace(uriMatch[1], abs);
-            } catch { /* keep original */ }
-          }
-          return line;
-        }
-
-        // #EXT-X-I-FRAME-STREAM-INF también tiene URI=
-        if (trimmed.startsWith('#EXT-X-I-FRAME-STREAM-INF')) {
-          const uriMatch = line.match(/URI="([^"]+)"/);
-          if (uriMatch && !uriMatch[1].startsWith('http')) {
-            try {
-              const abs = new URL(uriMatch[1], baseUrl).toString();
-              return line.replace(uriMatch[1], abs);
-            } catch { /* keep original */ }
-          }
-          return line;
-        }
-
-        // #EXT-X-MAP (init segment para fMP4)
-        if (trimmed.startsWith('#EXT-X-MAP')) {
+        if (
+          trimmed.startsWith('#EXT-X-STREAM-INF') ||
+          trimmed.startsWith('#EXT-X-I-FRAME-STREAM-INF') ||
+          trimmed.startsWith('#EXT-X-MAP')
+        ) {
           const uriMatch = line.match(/URI="([^"]+)"/);
           if (uriMatch && !uriMatch[1].startsWith('http')) {
             try {
