@@ -2,9 +2,6 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { DiscoverInput, ProviderDiscoveredSource } from '../domain/types';
 import { languageCodeFor } from '../infrastructure/providers/resolvers/server-resolver';
-import { JkanimeCatalogService } from '../infrastructure/providers/jkanime/jkanime-catalog.service';
-import { TmdbService } from '../infrastructure/tmdb/tmdb.service';
-import { SourceRegistryService } from './source-registry.service';
 
 const UNLIMPLAY = 'https://unlimplay.com';
 const NSRPLAY = 'https://nsrplay.space';
@@ -25,12 +22,7 @@ export class DiscoveryService {
   /// Concurrency limit para no saturar FlareSolverr/providers.
   private static readonly PROVIDER_CONCURRENCY = 3;
 
-  constructor(
-    private readonly config: ConfigService,
-    private readonly jk: JkanimeCatalogService,
-    private readonly tmdb: TmdbService,
-    private readonly registry: SourceRegistryService,
-  ) {}
+  constructor(private readonly config: ConfigService) {}
 
   async discoverAll(
     input: DiscoverInput,
@@ -49,9 +41,12 @@ export class DiscoveryService {
           try {
             if (await isNegativeCached(providerId)) continue;
             const sources = await this.discover(providerId, input);
+            // Entrada con [] = "existe el provider pero no tiene el título"
+            // (negative cache larga). Errores transitorios NO se registran
+            // aquí: quedan fuera del mapa y el caller aplica cooldown corto.
             results.set(providerId, sources);
           } catch (err) {
-            this.logger.log(`discovery ${providerId} sin resultados: ${String(err).slice(0, 100)}`);
+            this.logger.log(`discovery ${providerId} error transitorio: ${String(err).slice(0, 100)}`);
           }
         }
       },
@@ -68,69 +63,12 @@ export class DiscoveryService {
         return this.discoverNsrplay(input);
       case 'vidlink':
         return this.discoverVidlink(input);
-      case 'jkanime':
-        return this.discoverJkanime(input);
       default:
         throw new Error(`discovery no implementado para ${providerId}`);
     }
   }
 
   // ── JKAnime ───────────────────────────────────────────────────────────────
-
-  /// Anime en español vía jkanime. TMDB id ≠ slug de jkanime: la primera vez
-  /// busca por título y guarda el mapping para siempre.
-  private async discoverJkanime(input: DiscoverInput): Promise<ProviderDiscoveredSource[]> {
-    // Solo tiene sentido para series/anime con episodio concreto.
-    if (!input.episode || input.episode <= 0) throw new Error('no episódico');
-
-    let slug: string | undefined;
-    const mapping = await this.registry.getMapping(input.tmdbId, input.contentType, 'jkanime');
-    if (mapping) {
-      slug = mapping.providerContentId;
-    } else {
-      const raw = await this.tmdb.seriesDetails(Number(input.tmdbId));
-      const candidates = [raw.title, raw.original_title].filter(Boolean) as string[];
-      for (const title of candidates) {
-        const results = await this.jk.search(title);
-        if (results.length > 0) {
-          slug = results[0]!.id;
-          await this.registry.saveMapping({
-            tmdbId: input.tmdbId,
-            contentType: input.contentType,
-            providerId: 'jkanime',
-            providerContentId: slug,
-            confidence: 0.8,
-          });
-          this.logger.log(`mapping jkanime: ${input.tmdbId} → ${slug} ("${title}")`);
-          break;
-        }
-      }
-    }
-    if (!slug) throw new Error('sin mapping ni resultado de búsqueda');
-
-    // Verificar que el episodio existe antes de crear la fuente.
-    const episodes = await this.jk.episodes(slug);
-    const exists =
-      episodes.length === 0 /* conteo desconocido: optimista */
-        ? true
-        : episodes.some((e) => e.number === input.episode);
-    if (!exists) throw new Error(`episodio ${input.episode} no existe en jkanime`);
-
-    return [
-      {
-        tmdbId: input.tmdbId,
-        contentType: input.contentType,
-        seasonNum: input.season ?? 0,
-        episodeNum: input.episode ?? 0,
-        languageCode: 'es-subs',
-        languageName: 'Subtitulado',
-        providerId: 'jkanime',
-        serverId: 'jkanime',
-        providerItemId: slug,
-        deliveryMode: 'direct',
-      },
-    ];
-  }
 
   // ── UnlimPlay ─────────────────────────────────────────────────────────────
 
@@ -178,7 +116,7 @@ export class DiscoveryService {
         });
       }
     }
-    if (sources.length === 0) throw new Error('sin candidatos');
+    // [] = provider alcanzable pero el título no está → negative cache larga.
     return sources;
   }
 
@@ -199,7 +137,8 @@ export class DiscoveryService {
       servers?: { name: string; language: string; token?: string; directResolveEligible?: boolean; quality?: string }[];
     };
     const eligible = (json.servers ?? []).filter((s) => s.directResolveEligible && s.token);
-    if (eligible.length === 0) throw new Error('sin servidores elegibles');
+    // [] = sin servidores para este título (no es un error del provider).
+    if (eligible.length === 0) return [];
 
     return eligible.map((s) => ({
       tmdbId: input.tmdbId,

@@ -5,7 +5,6 @@ import type { ServerResolver } from './server-resolver';
 import { UnlimplaySourceResolver } from './unlimplay.resolver';
 import { VidlinkSourceResolver } from './vidlink.resolver';
 import { NsrPlaySourceResolver } from './nsrplay.resolver';
-import { JkAnimeSourceResolver } from './jkanime.resolver';
 
 /**
  * Registro de resolvers por servidor. Un mismo servidor (p.ej. streamwish)
@@ -19,9 +18,8 @@ export class ResolverRegistry {
     unlimplay: UnlimplaySourceResolver,
     vidlink: VidlinkSourceResolver,
     nsrplay: NsrPlaySourceResolver,
-    jkanime: JkAnimeSourceResolver,
   ) {
-    this.resolvers = [unlimplay, vidlink, nsrplay, jkanime];
+    this.resolvers = [unlimplay, vidlink, nsrplay];
   }
 
   resolverFor(providerId: string, serverId: string): ServerResolver | null {

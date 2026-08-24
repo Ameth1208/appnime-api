@@ -268,7 +268,12 @@ export class SourceRegistryService {
     providerId: string;
     reason?: string;
   }): Promise<void> {
-    const nextCheckAt = new Date(Date.now() + NEGATIVE_CACHE_HOURS * 3600 * 1000);
+    // 'not_found' = el provider no tiene el título (6h).
+    // 'transient_error' = falló la extracción ahora (10 min): un timeout o
+    // Cloudflare de un momento NO debe esconder un provider medio día.
+    const ttlH =
+      (params.reason ?? 'not_found') === 'transient_error' ? 10 / 60 : NEGATIVE_CACHE_HOURS;
+    const nextCheckAt = new Date(Date.now() + ttlH * 3600 * 1000);
     await this.prisma.discoveryNegativeCache.upsert({
       where: {
         tmdbId_contentType_seasonNum_episodeNum_providerId: {

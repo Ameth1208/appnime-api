@@ -116,6 +116,7 @@ export class CatalogController {
       source: { provider: l.provider, server: l.server },
       delivery: l.delivery,
       expiresAt: l.expiresAt?.toISOString(),
+      ...(l.subtitles?.length ? { subtitles: l.subtitles } : {}),
     }));
   }
 

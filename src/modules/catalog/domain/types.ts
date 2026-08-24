@@ -112,6 +112,13 @@ export interface DiscoveredSource {
 }
 
 /// URL fresca + metadata de playback. Vida corta (segundos/minutos).
+/// Pista de subtítulos externa asociada a un stream.
+export interface SubtitleTrack {
+  language: string; // código ISO si se conoce ("es", "en"), si no etiqueta
+  title?: string;
+  url: string;
+}
+
 export interface PlaybackLease {
   url: string;
   kind: 'hls' | 'mp4';
@@ -119,6 +126,7 @@ export interface PlaybackLease {
   quality?: string;
   delivery: StreamDelivery;
   expiresAt?: Date;
+  subtitles?: SubtitleTrack[];
 }
 
 /// Input estándar para discovery.

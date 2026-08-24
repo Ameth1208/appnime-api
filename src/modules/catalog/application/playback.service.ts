@@ -50,7 +50,10 @@ export class PlaybackService {
   private readonly activeLeases = new Map<string, { sourceId: string; expiresAt: number }>();
 
   /// Providers con discovery implementado.
-  readonly knownProviders = ['nsrplay', 'unlimplay', 'vidlink', 'jkanime'];
+  /// jkanime NO es proveedor de streams: solo se usa para búsqueda/filtrado
+  /// del catálogo anime. El playback del anime va por unlimplay/nsrplay/vidlink
+  /// con TMDB IDs, igual que las series.
+  readonly knownProviders = ['nsrplay', 'unlimplay', 'vidlink'];
 
   constructor(
     private readonly registry: SourceRegistryService,
@@ -230,24 +233,29 @@ export class PlaybackService {
     );
 
     let total = 0;
-    const successfulProviders = new Set<string>();
+    const successful = new Set<string>();
+    const emptyButReachable = new Set<string>();
     for (const [providerId, sources] of byProvider) {
-      if (sources.length === 0) continue;
-      successfulProviders.add(providerId);
+      if (sources.length === 0) {
+        emptyButReachable.add(providerId);
+        continue;
+      }
+      successful.add(providerId);
       await this.registry.saveSources(sources as ProviderDiscoveredSource[]);
       total += sources.length;
     }
-    // Negative cache para todo provider sin resultados en este discovery.
     for (const providerId of this.knownProviders) {
-      if (!successfulProviders.has(providerId)) {
-        await this.registry.markNotFound({
-          tmdbId: req.tmdbId,
-          contentType: req.contentType,
-          seasonNum: req.season,
-          episodeNum: req.episode,
-          providerId,
-        });
-      }
+      if (successful.has(providerId)) continue;
+      // Provider alcanzable pero sin el título → no existe ahí (6h).
+      // Provider que FALLÓ (timeout/Cloudflare) → cooldown corto (10 min).
+      await this.registry.markNotFound({
+        tmdbId: req.tmdbId,
+        contentType: req.contentType,
+        seasonNum: req.season,
+        episodeNum: req.episode,
+        providerId,
+        reason: emptyButReachable.has(providerId) ? 'not_found' : 'transient_error',
+      });
     }
     this.logger.log(`discovery ${req.tmdbId} S${req.season ?? 0}E${req.episode ?? 0}: ${total} fuentes`);
     return total;

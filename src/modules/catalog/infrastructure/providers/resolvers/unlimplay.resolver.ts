@@ -11,6 +11,7 @@ import type { PlaybackLease } from '../../../domain/types';
 import type { SourceCandidate } from '../../../application/source-registry.service';
 import { leaseTtl, type ServerResolver } from './server-resolver';
 import { needsTunnel, tunnelIfLocked } from '../../http/tunnel.util';
+import { detectHlsSubtitles } from '../../http/subtitles.util';
 
 const UNLIMPLAY = 'https://unlimplay.com';
 const UA =
@@ -46,16 +47,26 @@ export class UnlimplaySourceResolver implements ServerResolver {
     if (!embedUrl) throw new Error('unlimplay source sin providerUrl');
 
     // Tier 1 + 2
-    const leases = await this.resolveHttp(embedUrl, source);
-    if (leases.length > 0) return leases;
-
-    // Tier 3: FlareSolverr solo como último recurso.
-    if (this.flareUrl) {
-      const fsLeases = await this.resolveViaFlareSolverr(embedUrl, source);
-      if (fsLeases.length > 0) return fsLeases;
+    let leases = await this.resolveHttp(embedUrl, source);
+    if (leases.length === 0 && this.flareUrl) {
+      // Tier 3: FlareSolverr solo como último recurso.
+      leases = await this.resolveViaFlareSolverr(embedUrl, source);
+    }
+    if (leases.length === 0) {
+      throw new Error(`unlimplay/${source.serverId}: sin streams tras extracción escalonada`);
     }
 
-    throw new Error(`unlimplay/${source.serverId}: sin streams tras extracción escalonada`);
+    // Detección best-effort de subtítulos en el primer HLS (8s máx).
+    const hls = leases.find((l) => l.kind === 'hls');
+    if (hls) {
+      const subtitles = await detectHlsSubtitles(hls.url, hls.headers).catch(() => []);
+      if (subtitles.length > 0) {
+        this.logger.log(`unlimplay/${source.serverId}: ${subtitles.length} pistas de subtítulos`);
+        for (const l of leases) l.subtitles = subtitles;
+      }
+    }
+
+    return leases;
   }
 
   private async resolveHttp(url: string, source: SourceCandidate): Promise<PlaybackLease[]> {
