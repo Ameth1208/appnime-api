@@ -1,4 +1,3 @@
-import { execFile } from 'node:child_process';
 import { Injectable } from '@nestjs/common';
 import type { ContentType, ResolvedStream, TmdbKeyedProvider } from '../../../domain/types';
 import { TtlCache } from '../../http/fetcher';
@@ -145,29 +144,25 @@ export class VidlinkCatalogProvider implements TmdbKeyedProvider {
     return this.mapStreams(res, `tv:${id}:${season}:${episode}`);
   }
 
-  private curlJson<T>(url: string): Promise<T> {
-    return new Promise((resolve, reject) => {
-      execFile(
-        'curl',
-        [
-          '-s', '--max-time', '20', '--compressed',
-          '-A', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36',
-          '-H', 'x-playback-environment: standard',
-          '-H', 'referer: https://vidlink.pro/',
-          url,
-        ],
-        { timeout: 25000, maxBuffer: 8 * 1024 * 1024 },
-        (err, stdout) => {
-          if (err) return reject(new Error(`vidlink request failed: ${err.message}`));
-          try {
-            const parsed = stdout.trim() ? (JSON.parse(stdout) as T) : (null as unknown as T);
-            resolve(parsed);
-          } catch {
-            reject(new Error('vidlink invalid response'));
-          }
-        },
-      );
+  private async curlJson<T>(url: string): Promise<T> {
+    const res = await fetch(url, {
+      headers: {
+        'user-agent':
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36',
+        'x-playback-environment': 'standard',
+        referer: 'https://vidlink.pro/',
+        accept: 'application/json',
+      },
+      signal: AbortSignal.timeout(20000),
+      redirect: 'follow',
     });
+    if (!res.ok) throw new Error(`vidlink request failed: HTTP ${res.status}`);
+    const text = await res.text();
+    try {
+      return (text.trim() ? JSON.parse(text) : null) as T;
+    } catch {
+      throw new Error('vidlink invalid response');
+    }
   }
 
   private mapStreams(res: VidlinkResponse | null | undefined, ref: string): ResolvedStream[] {
