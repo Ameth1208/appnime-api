@@ -18,6 +18,7 @@ import type { AnyCatalogProvider } from '../infrastructure/providers/provider-fa
 import { needsTunnel, wrapPlaylistProxy } from '../infrastructure/http/tunnel.util';
 import { StreamResolutionService } from '../infrastructure/providers/stream-resolution.service';
 import { SourceRegistryService } from './source-registry.service';
+import { PlaybackService } from './playback.service';
 import { CatalogSearchService } from '../infrastructure/search/catalog-search.service';
 
 export const MOVIE_PROVIDERS = 'CATALOG_MOVIE_PROVIDERS';
@@ -52,6 +53,7 @@ export class CatalogService {
     private readonly searchEngine: CatalogSearchService,
     private readonly config: ConfigService,
     private readonly registry: SourceRegistryService,
+    private readonly playback: PlaybackService,
   ) {}
 
   listProviders() {
@@ -98,6 +100,11 @@ export class CatalogService {
 
   async getMovie(id: string): Promise<MovieDetails> {
     const d = await this.metadata.movieDetails(String(id));
+    // Prewarm: discovery en background para que la ficha tenga idiomas
+    // y el Play posterior sea instantáneo. No bloquea la respuesta.
+    void this.playback
+      .prepare({ tmdbId: String(id), contentType: 'movie' })
+      .catch(() => undefined);
     const knownLanguages = await this.registry
       .distinctLanguages(String(id), 'movie')
       .catch(() => [] as string[]);
@@ -116,6 +123,12 @@ export class CatalogService {
     }
     const seasonNumbers = d.seasons.map((s) => s.number);
     const episodesBySeason = await Promise.all(seasonNumbers.map((n) => this.metadata.seasonEpisodes(String(id), n).catch(() => [])));
+    // Prewarm: discovery en background del E1 de la primera temporada real.
+    // Así TODA serie tiene contenido conocido poco después de abrir su ficha.
+    const firstSeason = seasonNumbers.find((n) => n >= 1) ?? 1;
+    void this.playback
+      .prepare({ tmdbId: String(id), contentType: 'series', season: firstSeason, episode: 1 })
+      .catch(() => undefined);
     const knownLanguages = await this.registry
       .distinctLanguages(String(id), 'series')
       .catch(() => [] as string[]);
