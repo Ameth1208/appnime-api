@@ -50,7 +50,7 @@ export class PlaybackService {
   private readonly activeLeases = new Map<string, { sourceId: string; expiresAt: number }>();
 
   /// Providers con discovery implementado.
-  readonly knownProviders = ['nsrplay', 'unlimplay', 'vidlink'];
+  readonly knownProviders = ['nsrplay', 'unlimplay', 'vidlink', 'jkanime'];
 
   constructor(
     private readonly registry: SourceRegistryService,

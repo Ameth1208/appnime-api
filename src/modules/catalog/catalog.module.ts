@@ -16,6 +16,7 @@ import { JkanimeSearchService } from './infrastructure/providers/jkanime/jkanime
 import { StreamResolutionService } from './infrastructure/providers/stream-resolution.service';
 import { JkanimeCatalogService } from './infrastructure/providers/jkanime/jkanime-catalog.service';
 import { JkAnimeAdapter } from './infrastructure/providers/jkanime/jkanime.adapter';
+import { JkAnimeSourceResolver } from './infrastructure/providers/resolvers/jkanime.resolver';
 import { AdultFilterMiddleware } from './adult-filter.middleware';
 import { SourceRegistryService } from './application/source-registry.service';
 import { DiscoveryService } from './application/discovery.service';
@@ -55,6 +56,7 @@ import { NsrPlaySourceResolver } from './infrastructure/providers/resolvers/nsrp
     UnlimplaySourceResolver,
     VidlinkSourceResolver,
     NsrPlaySourceResolver,
+    JkAnimeSourceResolver,
     ResolverRegistry,
     PlaybackService,
     CatalogService,
