@@ -39,6 +39,7 @@ EXPOSE 4000
 ENV NODE_ENV=production
 
 # Aplica schema changes antes de arrancar el server
-CMD ["sh", "-c", "npx prisma db push --accept-data-loss && node dist/main.js"]
+CMD ["sh", "-c", "npx prisma db push --accept-data-loss --url=\"$DATABASE_URL\" && node dist/main.js"]
+
 
 
