@@ -1,4 +1,5 @@
 import { Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import type {
   ContentSummary,
   Episode,
@@ -35,6 +36,7 @@ export class CatalogService {
     @Inject(METADATA_PROVIDER) private readonly metadata: MetadataProvider,
     private readonly streamResolution: StreamResolutionService,
     private readonly searchEngine: CatalogSearchService,
+    private readonly config: ConfigService,
   ) {}
 
   listProviders() {
@@ -140,9 +142,11 @@ export class CatalogService {
       }),
     );
 
-    const allStreams = results
-      .flatMap((r) => (r.status === 'fulfilled' ? r.value : []))
-      .sort(this.sortByLangThenQuality);
+    const allStreams = this.applyStreamTunnel(
+      results
+        .flatMap((r) => (r.status === 'fulfilled' ? r.value : []))
+        .sort(this.sortByLangThenQuality),
+    );
 
     if (allStreams.length === 0) {
       throw new NotFoundException({ code: 'NO_STREAMS_FOUND', triedProviders: this.movieProviders.map((p) => p.id), errors: results.filter((r) => r.status === 'rejected').map((r) => String(r.reason)) });
@@ -183,9 +187,11 @@ export class CatalogService {
       }),
     );
 
-    const allStreams = results
-      .flatMap((r) => (r.status === 'fulfilled' ? r.value : []))
-      .sort(this.sortByLangThenQuality);
+    const allStreams = this.applyStreamTunnel(
+      results
+        .flatMap((r) => (r.status === 'fulfilled' ? r.value : []))
+        .sort(this.sortByLangThenQuality),
+    );
 
     if (allStreams.length === 0) {
       throw new NotFoundException({ code: 'NO_STREAMS_FOUND', triedProviders: this.seriesProviders.map((p) => p.id), errors: results.filter((r) => r.status === 'rejected').map((r) => String(r.reason)) });
@@ -203,6 +209,41 @@ export class CatalogService {
     }
 
     return allStreams;
+  }
+
+  /// CDNs cuyos streams HLS llegan con lock de IP/ASN (el m3u8 solo sirve
+  /// desde la IP que lo extrajo). Su tráfico debe tunelizarse por nuestro
+  /// proxy (`stream/playlist?tunnel=1`) para reproducirse en el cliente.
+  private static readonly TUNNEL_HOST_SUFFIXES = [
+    'premilkyway.com', // streamwish / hglink
+    'streamwish.to',
+    'hglink.to',
+  ];
+
+  /// Envuelve los HLS de hosts con lock de red en el playlist-proxy del
+  /// backend. Los MP4 de vidlink y demás fuentes directas quedan intactos.
+  private applyStreamTunnel(streams: ResolvedStream[]): ResolvedStream[] {
+    const base = (this.config.get<string>('PUBLIC_BASE_URL') ?? '').replace(/\/+$/, '');
+    if (!base) return streams;
+    return streams.map((s) => {
+      if (s.kind !== 'hls') return s;
+      let host = '';
+      try {
+        host = new URL(s.url).hostname;
+      } catch {
+        return s;
+      }
+      const locked = CatalogService.TUNNEL_HOST_SUFFIXES.some(
+        (suffix) => host === suffix.trim() || host.endsWith(suffix.trim()),
+      );
+      if (!locked) return s;
+      const params = new URLSearchParams({
+        url: s.url,
+        referer: 'https://unlimplay.com/',
+        tunnel: '1',
+      });
+      return { ...s, url: `${base}/api/v1/catalog/stream/playlist?${params.toString()}` };
+    });
   }
 
   private sortByLangThenQuality(a: ResolvedStream, b: ResolvedStream): number {

@@ -1,4 +1,5 @@
 import { Controller, Get, Query, Res } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import type { Response } from 'express';
 
 const ALLOWED_HOSTS = [
@@ -20,20 +21,28 @@ const ALLOWED_HOSTS = [
 
 @Controller('v1/catalog/stream')
 export class StreamProxyController {
+  constructor(private readonly config: ConfigService) {}
+
   /// Obtiene un playlist HLS desde el upstream, resuelve todas las URLs
   /// relativas a absolutas y lo devuelve al player. El player se conecta
   /// DIRECTAMENTE al CDN usando esas URLs absolutas — nuestro backend solo
   /// sirve el playlist inicial (~1-2 KB), nunca los segmentos de video.
+  ///
+  /// Con `tunnel=1` (CDNs con lock de IP/ASN, p.ej. streamwish): además
+  /// reescribe variantes y segmentos para que TODO el tráfico pase por
+  /// `/proxy` — el CDN solo ve requests desde el servidor.
   @Get('playlist')
   async playlist(
     @Query('url') url: string,
     @Query('referer') refererParam: string | undefined,
+    @Query('tunnel') tunnelParam: string | undefined,
     @Res() res: Response,
   ): Promise<void> {
     if (!url) {
       res.status(400).send('Missing url');
       return;
     }
+    const tunnel = tunnelParam === '1';
 
     try {
       const upstream = await fetch(url, {
@@ -59,6 +68,9 @@ export class StreamProxyController {
 
       // Resolver TODAS las URLs relativas a absolutas contra el CDN real.
       body = this.resolveRelativeUrls(body, finalUrl);
+      if (tunnel) {
+        body = this.tunnelizeUrls(body, refererParam);
+      }
 
       res.set({
         'Content-Type': 'application/vnd.apple.mpegurl',
@@ -79,12 +91,14 @@ export class StreamProxyController {
   async proxy(
     @Query('url') url: string,
     @Query('referer') refererParam: string | undefined,
+    @Query('tunnel') tunnelParam: string | undefined,
     @Res() res: Response,
   ): Promise<void> {
     if (!url) {
       res.status(400).send('Missing url');
       return;
     }
+    const tunnel = tunnelParam === '1';
 
     try {
       const upstream = await fetch(url, {
@@ -102,7 +116,8 @@ export class StreamProxyController {
         bodyText.trimStart().startsWith('#EXTM3U')
       ) {
         const finalUrl = upstream.url || url;
-        const resolved = this.resolveRelativeUrls(bodyText, finalUrl);
+        let resolved = this.resolveRelativeUrls(bodyText, finalUrl);
+        if (tunnel) resolved = this.tunnelizeUrls(resolved, refererParam);
         res.set({ 'Content-Type': 'application/vnd.apple.mpegurl' });
         res.send(resolved);
         return;
@@ -113,6 +128,7 @@ export class StreamProxyController {
       res.set({
         'Content-Type': contentType || 'application/octet-stream',
         'Content-Length': String(buffer.length),
+        'Access-Control-Allow-Origin': '*',
       });
       res.send(buffer);
     } catch (err) {
@@ -176,6 +192,43 @@ export class StreamProxyController {
           try {
             return new URL(trimmed, baseUrl).toString();
           } catch { return line; }
+        }
+        return line;
+      })
+      .join('\n');
+  }
+
+  /// Reescribe cada URL del playlist para que pase por `/proxy`. Las URLs
+  /// deben venir absolutas (aplicar `resolveRelativeUrls` antes).
+  private tunnelizeUrls(content: string, referer?: string): string {
+    const base = (this.config.get<string>('PUBLIC_BASE_URL') ?? '').replace(/\/+$/, '');
+    if (!base) return content;
+    const proxyBase = `${base}/api/v1/catalog/stream/proxy`;
+    const wrap = (raw: string): string => {
+      try {
+        const abs = new URL(raw).toString();
+        const params = new URLSearchParams({ url: abs, tunnel: '1' });
+        if (referer) params.set('referer', referer);
+        return `${proxyBase}?${params.toString()}`;
+      } catch {
+        return raw;
+      }
+    };
+    return content
+      .split('\n')
+      .map((line) => {
+        const trimmed = line.trim();
+        if (!trimmed) return line;
+        if (trimmed.startsWith('#')) {
+          // URI="..." embebida en EXT-X-STREAM-INF / I-FRAME / MAP.
+          const uriMatch = line.match(/URI="([^"]+)"/);
+          if (uriMatch && uriMatch[1].startsWith('http')) {
+            return line.replace(uriMatch[1], wrap(uriMatch[1]));
+          }
+          return line;
+        }
+        if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+          return wrap(trimmed);
         }
         return line;
       })
