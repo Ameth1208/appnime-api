@@ -32,6 +32,7 @@ services:
       - TMDB_API_KEY=${TMDB_API_KEY}
       - CATALOG_EMBED_SOURCES=${CATALOG_EMBED_SOURCES:-vidsrc.xyz,autoembed,multiembed,vidlink}
       - CATALOG_VIDLINK=${CATALOG_VIDLINK:-on}
+      - FLARESOLVERR_URL=${FLARESOLVERR_URL:-http://appnime-flaresolverr:8191}
       - MEILI_HOST=${MEILI_HOST:-http://appnime-meilisearch:7700}
       - MEILI_MASTER_KEY=${MEILI_MASTER_KEY:-appnime-meili-key}
       - INITIAL_ADMIN_EMAIL=${INITIAL_ADMIN_EMAIL:-}
@@ -60,6 +61,15 @@ services:
       - MEILI_NO_ANALYTICS=true
     volumes:
       - meili_data:/meili_data
+    networks:
+      - dokploy-network
+
+  appnime-flaresolverr:
+    container_name: appnime-flaresolverr
+    image: ghcr.io/flaresolverr/flaresolverr:latest
+    restart: unless-stopped
+    environment:
+      - LOG_LEVEL=info
     networks:
       - dokploy-network
 
