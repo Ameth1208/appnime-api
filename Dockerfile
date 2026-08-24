@@ -27,6 +27,7 @@ COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/package.json ./package.json
 COPY --from=builder /app/prisma ./prisma
+COPY --from=builder /app/assets ./assets
 
 # Create storage directory for uploads
 RUN mkdir -p /app/storage && chown -R node:node /app/storage
@@ -34,7 +35,12 @@ RUN mkdir -p /app/storage && chown -R node:node /app/storage
 # Generate Prisma client for the production image
 RUN npx prisma generate
 
+# Copy entrypoint script (applies prisma db push before starting)
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
 EXPOSE 4000
 ENV NODE_ENV=production
 
-CMD ["node", "dist/main.js"]
+ENTRYPOINT ["/entrypoint.sh"]
+

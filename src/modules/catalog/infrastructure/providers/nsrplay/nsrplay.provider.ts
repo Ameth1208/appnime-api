@@ -100,15 +100,6 @@ export class NsrPlayCatalogProvider implements TmdbKeyedProvider {
         const wrapPlaylist = (rawUrl: string): string =>
           `${publicBase}/api/v1/catalog/stream/playlist?url=${encodeURIComponent(rawUrl)}&referer=${encodeURIComponent('https://nsrplay.space/')}`;
 
-        if (rj.data.directUrl) {
-          candidates.push({
-            url: wrapPlaylist(rj.data.directUrl),
-            kind: 'hls',
-            quality: 'auto',
-            server: langLabel,
-            providerId: this.id,
-          });
-        }
         if (rj.data.playUrl) {
           candidates.push({
             url: wrapPlaylist(rj.data.playUrl),
@@ -134,6 +125,7 @@ export class NsrPlayCatalogProvider implements TmdbKeyedProvider {
     return streams;
   }
 }
+
 
 
 
