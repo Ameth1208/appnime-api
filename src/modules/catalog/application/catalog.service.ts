@@ -17,6 +17,7 @@ import { normalizeText, similarity } from './text-similarity';
 import type { AnyCatalogProvider } from '../infrastructure/providers/provider-factory';
 import { needsTunnel, wrapPlaylistProxy } from '../infrastructure/http/tunnel.util';
 import { StreamResolutionService } from '../infrastructure/providers/stream-resolution.service';
+import { SourceRegistryService } from './source-registry.service';
 import { CatalogSearchService } from '../infrastructure/search/catalog-search.service';
 
 export const MOVIE_PROVIDERS = 'CATALOG_MOVIE_PROVIDERS';
@@ -29,6 +30,18 @@ function isTmdbKeyed(provider: AnyCatalogProvider): provider is AnyCatalogProvid
   return (provider as Partial<TmdbKeyedProvider>).supportsTmdbIds === true;
 }
 
+/// Idiomas para la ficha: fuentes reales conocidas primero (prioridad
+/// español), sin duplicados. Si aún no hay nada descubierto, lista vacía.
+const LANG_ORDER = ['español latino', 'latino', 'español', 'castellano', 'subtitulado', 'inglés'];
+function mergeLanguages(known: string[]): string[] {
+  const unique = [...new Set(known.map((l) => l.trim()).filter(Boolean))];
+  return unique.sort((a, b) => {
+    const ra = LANG_ORDER.indexOf(a.toLowerCase()) + 1 || 99;
+    const rb = LANG_ORDER.indexOf(b.toLowerCase()) + 1 || 99;
+    return ra - rb;
+  });
+}
+
 @Injectable()
 export class CatalogService {
   constructor(
@@ -38,6 +51,7 @@ export class CatalogService {
     private readonly streamResolution: StreamResolutionService,
     private readonly searchEngine: CatalogSearchService,
     private readonly config: ConfigService,
+    private readonly registry: SourceRegistryService,
   ) {}
 
   listProviders() {
@@ -84,7 +98,10 @@ export class CatalogService {
 
   async getMovie(id: string): Promise<MovieDetails> {
     const d = await this.metadata.movieDetails(String(id));
-    return { id: String(d.id), providerId: this.metadata.id, type: 'movie', title: d.title, originalTitle: d.originalTitle, overview: d.overview, posterUrl: d.posterUrl, backdropUrl: d.backdropUrl, year: d.year, rating: d.rating, genres: d.genres, runtimeMinutes: d.runtimeMinutes };
+    const knownLanguages = await this.registry
+      .distinctLanguages(String(id), 'movie')
+      .catch(() => [] as string[]);
+    return { id: String(d.id), providerId: this.metadata.id, type: 'movie', title: d.title, originalTitle: d.originalTitle, overview: d.overview, posterUrl: d.posterUrl, backdropUrl: d.backdropUrl, year: d.year, rating: d.rating, genres: d.genres, runtimeMinutes: d.runtimeMinutes, languages: mergeLanguages(knownLanguages) };
   }
 
   async getSeries(id: string): Promise<SeriesDetails> {
@@ -99,11 +116,15 @@ export class CatalogService {
     }
     const seasonNumbers = d.seasons.map((s) => s.number);
     const episodesBySeason = await Promise.all(seasonNumbers.map((n) => this.metadata.seasonEpisodes(String(id), n).catch(() => [])));
+    const knownLanguages = await this.registry
+      .distinctLanguages(String(id), 'series')
+      .catch(() => [] as string[]);
     return {
       id: String(d.id), providerId: this.metadata.id, type: 'series',
       title: d.title, originalTitle: d.originalTitle,
       overview: d.overview, posterUrl: d.posterUrl, backdropUrl: d.backdropUrl,
       year: d.year, rating: d.rating, genres: d.genres,
+      languages: mergeLanguages(knownLanguages),
       seasons: seasonNumbers.map((number, i) => ({
         number,
         episodes: episodesBySeason[i].map((e) => ({

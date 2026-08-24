@@ -292,6 +292,19 @@ export class SourceRegistryService {
     }).catch(() => undefined);
   }
 
+  // ── Idiomas conocidos ─────────────────────────────────────────────────────
+
+  /// Idiomas distintos con fuentes conocidas para un título (todas sus
+  /// temporadas/episodios). Alimenta el selector de idiomas de la ficha.
+  async distinctLanguages(tmdbId: string, contentType: string): Promise<string[]> {
+    const rows = await this.prisma.streamSource.findMany({
+      where: { tmdbId, contentType, enabled: true },
+      select: { languageName: true },
+      distinct: ['languageName'],
+    });
+    return rows.map((r) => r.languageName);
+  }
+
   // ── Provider content mapping ──────────────────────────────────────────────
 
   async getMapping(
