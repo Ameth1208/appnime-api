@@ -28,6 +28,7 @@ export const envSchema = z.object({
   CORS_ORIGINS: z.string().default('http://localhost:3000'),
   TMDB_API_KEY: z.string().default(''),
   CATALOG_EMBED_SOURCES: z.string().default(''),
+  CATALOG_API_KEY: z.string().default(''),
   ADULT_SECRET_CODE: z.string().default('appnime-adult'),
   MEILI_HOST: optionalUrl,
   MEILI_MASTER_KEY: z.string().default(''),

@@ -224,11 +224,13 @@ export class StreamProxyController {
     const base = (this.config.get<string>('PUBLIC_BASE_URL') ?? '').replace(/\/+$/, '');
     if (!base) return content;
     const proxyBase = `${base}/api/v1/catalog/stream/proxy`;
+    const apiKey = this.config.get<string>('CATALOG_API_KEY') ?? '';
     const wrap = (raw: string): string => {
       try {
         const abs = new URL(raw).toString();
         const params = new URLSearchParams({ url: abs, tunnel: '1' });
         if (referer) params.set('referer', referer);
+        if (apiKey) params.set('key', apiKey);
         return `${proxyBase}?${params.toString()}`;
       } catch {
         return raw;

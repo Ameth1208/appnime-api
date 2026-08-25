@@ -1,6 +1,8 @@
 import { Module } from '@nestjs/common';
+import { APP_GUARD } from '@nestjs/core';
 import { ConfigModule } from '@nestjs/config';
 import { validateEnv } from './common/config/env.schema';
+import { ApiKeyGuard } from './common/guards/api-key.guard';
 import { DatabaseModule } from './common/database/database.module';
 import { StorageModule } from './common/storage/storage.module';
 import { ContentModule } from './modules/content/content.module';
@@ -52,5 +54,6 @@ import { UsersModule } from './modules/users/users.module';
     CatalogModule,
     HealthModule,
   ],
+  providers: [{ provide: APP_GUARD, useClass: ApiKeyGuard }],
 })
 export class AppModule {}

@@ -16,7 +16,8 @@ export function needsTunnel(url: string): boolean {
   }
 }
 
-/// Envuelve una URL en el playlist-proxy del backend con túnel activado.
+/// Envuelve una URL en el playlist-proxy del backend. Incluye la API key
+/// como query para que el reproductor no necesite headers custom.
 /// Devuelve null si no hay PUBLIC_BASE_URL configurada.
 export function wrapPlaylistProxy(
   url: string,
@@ -28,6 +29,8 @@ export function wrapPlaylistProxy(
   const params = new URLSearchParams({ url });
   if (referer) params.set('referer', referer);
   if (options.tunnel) params.set('tunnel', '1');
+  const apiKey = process.env.CATALOG_API_KEY ?? '';
+  if (apiKey) params.set('key', apiKey);
   return `${base}/api/v1/catalog/stream/playlist?${params.toString()}`;
 }
 

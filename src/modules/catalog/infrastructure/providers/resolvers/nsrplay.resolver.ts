@@ -67,5 +67,7 @@ function wrapPlaylistOrThrow(url: string): string {
     url,
     referer: 'https://nsrplay.space/',
   });
+  const apiKey = process.env.CATALOG_API_KEY ?? '';
+  if (apiKey) params.set('key', apiKey);
   return `${base}/api/v1/catalog/stream/playlist?${params.toString()}`;
 }

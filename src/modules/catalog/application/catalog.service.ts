@@ -259,6 +259,10 @@ export class CatalogService {
     });
   }
 
+  // NOTA: la tabla StreamResolution (resolvedUrl) quedó obsoleta con el
+  // modelo v2: las URLs efímeras viven solo en PlaybackService.activeLeases
+  // con expiración; en DB se persiste identidad estable (StreamSource).
+
   private sortByLangThenQuality(a: ResolvedStream, b: ResolvedStream): number {
     const labelA = (a.server ?? '').split('·')[0].trim().toLowerCase();
     const labelB = (b.server ?? '').split('·')[0].trim().toLowerCase();

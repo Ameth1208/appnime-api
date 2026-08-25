@@ -1,3 +1,4 @@
+import { SkipApiKey } from '../../common/decorators/skip-api-key.decorator';
 import { Body, Controller, Post, UseGuards } from '@nestjs/common';
 import { AuthPrincipal, CurrentUser } from '../../common/security/current-user.decorator';
 import { JwtAuthGuard } from '../../common/security/jwt-auth.guard';
@@ -9,6 +10,7 @@ import { RefreshSessionUseCase } from './application/use-cases/refresh-session.u
 import { RegisterUserUseCase } from './application/use-cases/register-user.use-case';
 import { loginSchema, LoginInput, refreshSchema, registerSchema, RegisterInput } from './auth.schemas';
 
+@SkipApiKey()
 @Controller('v1/auth')
 export class AuthController {
   constructor(

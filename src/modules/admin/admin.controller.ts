@@ -1,3 +1,4 @@
+import { SkipApiKey } from '../../common/decorators/skip-api-key.decorator';
 import { Body, Controller, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { AccountStatus, DevicePlatform, DeviceStatus, PaymentProviderKind, PaymentStatus, Prisma, SubscriptionStatus, UserStatus } from '@prisma/client';
 import { PrismaService } from '../../common/database/prisma.service';
@@ -13,6 +14,7 @@ import { RealtimeGateway } from '../realtime/realtime.gateway';
 import { AdminGuard, SuperAdminGuard } from './admin.guard';
 import { accountStatusSchema, adminChangePasswordSchema, adminCreateUserSchema, adminDeviceLinkSchema, adminInviteSchema, adminNotifySchema, adminSetRoleSchema, adminTicketMessageSchema, announcementSchema, manualPaymentSchema, paymentStatusSchema, promotionCreateSchema, promotionUpdateSchema, subscriptionUpdateSchema, termsCreateSchema, ticketStatusSchema } from './admin.schemas';
 
+@SkipApiKey()
 @Controller('v1/admin')
 @UseGuards(JwtAuthGuard, AdminGuard)
 export class AdminController {
