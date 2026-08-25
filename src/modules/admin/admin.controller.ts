@@ -1099,4 +1099,22 @@ export class AdminController {
       byProvider: Array.from(byProvider.entries()).map(([provider, value]) => ({ provider, ...value })).sort((a, b) => b.incomeCents - a.incomeCents),
     };
   }
+
+  @Post('purge-blocked-sources')
+  @UseGuards(SuperAdminGuard)
+  async purgeBlockedSources() {
+    const BLOCKED = [
+      '1xbet', '1xbet.com', '1xbetname.com', 'bet365', 'betano',
+      'sportbet', 'gambling', 'casino', 'poker', 'bingo',
+      'betting', 'odds', 'wager', 'stake.com', 'betway',
+      'betfair', 'bwin', 'williamhill', 'unibet', 'betsson',
+      'pin-up', 'parimatch', 'melbet', 'mostbet', '1win',
+      'megapari', 'linebet',
+    ];
+    const urlConditions = BLOCKED.map((h) => ({ providerUrl: { contains: h } }));
+    const count = await this.prisma.streamSource.deleteMany({
+      where: { OR: urlConditions },
+    });
+    return { deleted: count.count };
+  }
 }
