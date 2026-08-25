@@ -17,6 +17,49 @@ const UNLIMPLAY = 'https://unlimplay.com';
 const UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36';
 
+/// Hosts de ads/gambling que aparecen en embeds y NO son streams de video.
+const BLOCKED_HOSTS = [
+  '1xbet',
+  '1xbet.com',
+  '1xbetname.com',
+  'bet365',
+  'betano',
+  'sportbet',
+  'gambling',
+  'casino',
+  'poker',
+  'bingo',
+  'betting',
+  'odds',
+  'wager',
+  'stake.com',
+  'betway',
+  'betfair',
+  'bwin',
+  'williamhill',
+  'unibet',
+  'betsson',
+  'betsson.com',
+  'pin-up',
+  'parimatch',
+  'melbet',
+  'mostbet',
+  '1win',
+  'megapari',
+  'linebet',
+];
+
+function isBlockedHost(url: string): boolean {
+  try {
+    const host = new URL(url).hostname.toLowerCase();
+    return BLOCKED_HOSTS.some(
+      (h) => host === h || host.endsWith(`.${h}`) || host.includes(h),
+    );
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Resuelve fuentes de UnlimPlay a partir de la URL del embed guardada en
  * `StreamSource.providerUrl`. Extrae el m3u8 fresco en cada resolución.
@@ -90,15 +133,15 @@ export class UnlimplaySourceResolver implements ServerResolver {
 
     // Packed JS (Dean Edwards) que contiene el m3u8.
     for (const u of JsUnpacker.extractFromPacked(html)) {
-      found.push(this.toLease(u, source));
+      if (!isBlockedHost(u)) found.push(this.toLease(u, source));
     }
     // m3u8 directos en el HTML.
     for (const m of html.matchAll(/["'](https?:\/\/[^"']+?\.m3u8[^"']*)["']/g)) {
-      found.push(this.toLease(m[1], source));
+      if (!isBlockedHost(m[1])) found.push(this.toLease(m[1], source));
     }
     // file:"..." con m3u8 relativo //.
     for (const m of html.matchAll(/file:\s*["']([^"']+)["']/g)) {
-      if (m[1].includes('.m3u8')) {
+      if (m[1].includes('.m3u8') && !isBlockedHost(m[1])) {
         found.push(this.toLease(m[1].startsWith('//') ? `https:${m[1]}` : m[1], source));
       }
     }
