@@ -47,10 +47,38 @@ export class NsrPlaySourceResolver implements ServerResolver {
     const rj = (await resolveRes.json()) as { success?: boolean; data?: NsrResolveData };
     if (!rj.success || !rj.data?.playUrl) throw new Error('nsrplay sin playUrl');
 
+    // Validación anti-fantasma: nsrplay a veces responde 200 con una imagen
+    // PNG (anti-hotlink) en vez del stream. Verificamos que el playlist que
+    // sirve nuestro proxy tenga segmentos con contenido de video real.
+    const proxied = wrapPlaylistOrThrow(rj.data.playUrl);
+    const check = await fetch(proxied, { signal: AbortSignal.timeout(15000) });
+    if (!check.ok) throw new Error(`nsrplay playlist HTTP ${check.status}`);
+    const playlistText = await check.text();
+    const firstSegment = playlistText
+      .split('\n')
+      .map((l) => l.trim())
+      .find((l) => l.startsWith('http'));
+    if (!firstSegment) throw new Error('nsrplay playlist sin segmentos');
+    try {
+      const segHead = await fetch(firstSegment, {
+        method: 'GET',
+        headers: UA,
+        signal: AbortSignal.timeout(12000),
+      });
+      const contentType = segHead.headers.get('content-type') ?? '';
+      if (/^image\//i.test(contentType)) {
+        throw new Error(`nsrplay sirviendo ${contentType} (stream fantasma)`);
+      }
+    } catch (err) {
+      throw new Error(
+        `nsrplay validación falló: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+
     return [
       {
         // nsrplay siempre vía playlist-proxy propio (su CDN requiere referer).
-        url: wrapPlaylistOrThrow(rj.data.playUrl),
+        url: proxied,
         kind: 'hls',
         quality: source.quality ?? 'auto',
         delivery: 'playlist_proxy',
