@@ -99,25 +99,33 @@ export class TmdbService {
   }
 
   /// Anime: animación japonesa ordenada por popularidad.
-  seriesAnime(page: number): Promise<TmdbPage<RawTmdbItem>> {
+  ///
+  /// without_keywords bloquea contenido adulto/hentai por keyword de TMDB:
+  /// 198385 hentai · 378816, 298666 (sexuales) · 445 pornography ·
+  /// 356759 porn · 155139 porn parody · 7344 porn star · 238355 gay porn ·
+  /// 347060 explicite sex · 256466 erotic · 267122 sex · 284535 adult video
+  private static readonly ADULT_KEYWORDS =
+    '198385,378816,298666,445,356759,155139,7344,238355,347060,256466,267122,284535';
+
+  async seriesAnime(page: number): Promise<TmdbPage<RawTmdbItem>> {
     return this.get<TmdbPage<RawTmdbItem>>('/discover/tv', {
       page: String(page),
       with_genres: '16',
       with_original_language: 'ja',
-      without_keywords: '198385,378816,298666',
+      without_keywords: TmdbService.ADULT_KEYWORDS,
       sort_by: 'popularity.desc',
       'vote_count.gte': '20',
     });
   }
 
   /// Búsqueda de anime dentro del catálogo de animación japonesa.
-  seriesAnimeSearch(query: string, page: number): Promise<TmdbPage<RawTmdbItem>> {
+  async seriesAnimeSearch(query: string, page: number): Promise<TmdbPage<RawTmdbItem>> {
     return this.get<TmdbPage<RawTmdbItem>>('/search/tv', {
       query,
       page: String(page),
       with_genres: '16',
       with_original_language: 'ja',
-      without_keywords: '198385,378816,298666',
+      without_keywords: TmdbService.ADULT_KEYWORDS,
     });
   }
 
