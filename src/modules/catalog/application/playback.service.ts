@@ -7,6 +7,7 @@ import {
   type SourceCandidate,
 } from './source-registry.service';
 import { ResolverRegistry } from '../infrastructure/providers/resolvers/resolver-registry';
+import { validateStreamUrl } from '../infrastructure/http/url-validate.util';
 
 export interface ResolveRequest {
   tmdbId: string;
@@ -26,7 +27,11 @@ export interface ResolvedLease extends PlaybackLease {
 }
 
 const MAX_LEASES = 3;
-const RESOLVE_TIMEOUT_MS = 15000;
+/// Timeout por provider:10s (bajado de15s para intentar más candidatos
+/// dentro del deadline global de40s).
+const RESOLVE_TIMEOUT_MS = 10000;
+/// Timeout de validación ligera (HEAD/GET) antes de devolver un lease.
+const VALIDATE_TIMEOUT_MS = 5000;
 /// Presupuesto total de una resolución: si se agota, devolvemos lo que haya
 /// (o vacío para que la app reintente) en vez de dejar al usuario colgado.
 const RESOLVE_DEADLINE_MS = 40000;
@@ -178,9 +183,26 @@ export class PlaybackService {
           RESOLVE_TIMEOUT_MS,
         );
         if (fresh.length === 0) throw new Error('respuesta vacía');
+
+        // Validación ligera: verificar que la URL responde correctamente
+        // antes de devolverla al cliente. Evita URLs muertas/expiradas.
+        const valid: typeof fresh = [];
+        for (const lease of fresh) {
+          if (Date.now() > deadline) break;
+          const v = await validateStreamUrl(lease, VALIDATE_TIMEOUT_MS);
+          if (v.ok) {
+            valid.push(lease);
+          } else {
+            this.logger.log(
+              `resolve ${source.providerId}/${source.serverId}: lease rechazado (${v.reason})`,
+            );
+          }
+        }
+        if (valid.length === 0) throw new Error('leases rechazados por validación');
+
         void this.registry.recordSuccess(source.id, Date.now() - started);
 
-        for (const lease of fresh) {
+        for (const lease of valid) {
           if (leases.length >= MAX_LEASES) break;
           const leaseId = `pl_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
           this.activeLeases.set(leaseId, {
