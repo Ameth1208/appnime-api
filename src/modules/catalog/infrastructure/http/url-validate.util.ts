@@ -62,6 +62,10 @@ async function validateHls(
   headers?: Record<string, string>,
   timeoutMs = 5000,
 ): Promise<UrlValidation> {
+  // Rechazar URLs de variantes de solo audio (patrón vimeos.net: index-a1.m3u8).
+  if (/index-a\d+\.m3u8/i.test(url) || /seg-\d+-a\d+\.ts/i.test(url)) {
+    return { ok: false, reason: 'hls_audio_only_url' };
+  }
   const res = await fetch(url, {
     headers: { 'user-agent': UA, accept: '*/*', ...(headers ?? {}) },
     signal: AbortSignal.timeout(timeoutMs),
@@ -74,13 +78,13 @@ async function validateHls(
   if (/^image\//i.test(ct)) {
     return { ok: false, reason: `hls_is_image: ${ct}` };
   }
-  // Leer solo los primeros 512 bytes para verificar #EXTM3U.
+  // Leer los primeros2KB para verificar #EXTM3U.
   const reader = res.body?.getReader();
   if (!reader) return { ok: false, reason: 'hls_no_body' };
   try {
     const { value, done } = await reader.read();
     if (done || !value) return { ok: false, reason: 'hls_empty' };
-    const head = new TextDecoder().decode(value.slice(0, 512));
+    const head = new TextDecoder().decode(value.slice(0, 2048));
     if (!head.includes('#EXTM3U')) {
       return { ok: false, reason: 'hls_not_m3u8' };
     }
