@@ -145,9 +145,12 @@ export class UnlimplaySourceResolver implements ServerResolver {
         found.push(this.toLease(m[1].startsWith('//') ? `https:${m[1]}` : m[1], source));
       }
     }
-    // Excluir streams de solo audio (patrón vimeos.net: index-a1.m3u8).
+    // Excluir streams de solo audio (patrón vimeos.net: index-a1.m3u8)
+    // y playlists de iframe/ads (iframes-v1-a1.m3u8).
     const videoLeases = found.filter(
-      (l) => !/index-a\d+\.m3u8/i.test(l.url) && !/seg-\d+-a\d+\.ts/i.test(l.url),
+      (l) => !/index-a\d+\.m3u8/i.test(l.url) &&
+        !/seg-\d+-a\d+\.ts/i.test(l.url) &&
+        !/iframes-.*\.m3u8/i.test(l.url),
     );
     if (videoLeases.length > 0) return dedupe(videoLeases);
     if (found.length > 0) return dedupe(found);

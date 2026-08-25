@@ -63,7 +63,9 @@ async function validateHls(
   timeoutMs = 5000,
 ): Promise<UrlValidation> {
   // Rechazar URLs de variantes de solo audio (patrón vimeos.net: index-a1.m3u8).
-  if (/index-a\d+\.m3u8/i.test(url) || /seg-\d+-a\d+\.ts/i.test(url)) {
+  // Rechazar playlists de iframe/ads (iframes-v1-a1.m3u8).
+  if (/index-a\d+\.m3u8/i.test(url) || /seg-\d+-a\d+\.ts/i.test(url) ||
+    /iframes-.*\.m3u8/i.test(url)) {
     return { ok: false, reason: 'hls_audio_only_url' };
   }
   const res = await fetch(url, {
