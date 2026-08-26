@@ -5,6 +5,7 @@ export const TUNNEL_HOST_SUFFIXES = [
   'premilkyway.com', // streamwish / hglink
   'streamwish.to',
   'hglink.to',
+  'dramiyos-cdn.com', // unlimplay CDN (IP-locked tokens)
 ];
 
 export function needsTunnel(url: string): boolean {
