@@ -1,4 +1,4 @@
-import { Controller, Get, Headers, Query, Res } from '@nestjs/common';
+import { Controller, Get, Headers, Logger, Query, Res } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { Response } from 'express';
 import { Readable } from 'node:stream';
@@ -22,6 +22,7 @@ const ALLOWED_HOSTS = [
 
 @Controller('v1/catalog/stream')
 export class StreamProxyController {
+  private readonly logger = new Logger(StreamProxyController.name);
   constructor(private readonly config: ConfigService) {}
 
   /// Obtiene un playlist HLS desde el upstream, resuelve todas las URLs
@@ -44,6 +45,7 @@ export class StreamProxyController {
       return;
     }
     const tunnel = tunnelParam === '1';
+    this.logger.log(`playlist: url=${url.slice(0, 120)}... tunnel=${tunnel}`);
 
     try {
       const upstream = await fetch(url, {
@@ -53,6 +55,7 @@ export class StreamProxyController {
       });
 
       if (!upstream.ok) {
+        this.logger.warn(`playlist: upstream ${upstream.status} for ${url.slice(0, 100)}`);
         res.status(upstream.status).send(`Upstream ${upstream.status}`);
         return;
       }
@@ -111,9 +114,9 @@ export class StreamProxyController {
       return;
     }
     const tunnel = tunnelParam === '1';
+    this.logger.log(`proxy: url=${url.slice(0, 120)}... tunnel=${tunnel}`);
 
     try {
-      // Forward de Range/If-Range para seeking y streams MP4.
       const range = headers['range'] ?? headers['Range'];
       const upstream = await fetch(url, {
         headers: {
