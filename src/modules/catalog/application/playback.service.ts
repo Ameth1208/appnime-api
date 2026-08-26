@@ -58,7 +58,7 @@ export class PlaybackService {
   /// jkanime NO es proveedor de streams: solo se usa para búsqueda/filtrado
   /// del catálogo anime. El playback del anime va por unlimplay/nsrplay/vidlink
   /// con TMDB IDs, igual que las series.
-  readonly knownProviders = ['nsrplay', 'unlimplay', 'vidlink'];
+  readonly knownProviders = ['unlimplay', 'nsrplay', 'vidlink'];
 
   constructor(
     private readonly registry: SourceRegistryService,

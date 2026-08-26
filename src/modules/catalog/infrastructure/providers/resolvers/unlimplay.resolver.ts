@@ -47,6 +47,12 @@ const BLOCKED_HOSTS = [
   '1win',
   'megapari',
   'linebet',
+  // Videos de prueba / fake streams
+  'test-videos.co.uk',
+  'test-streams.mux.dev',
+  'sample-videos.com',
+  'commondatastorage.googleapis.com',
+  'file-examples.com',
 ];
 
 function isBlockedHost(url: string): boolean {

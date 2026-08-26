@@ -139,6 +139,8 @@ export class SourceRegistryService {
   /// Candidatos ordenados por score, excluyendo deshabilitados y circuit-
   /// breaker activo. Si `languageCode` viene, prioriza ese idioma primero
   /// pero incluye el resto como fallback ordenado detrás.
+  /// Prioridad de provider: unlimplay > nsrplay > vidlink (mejor contenido
+  /// en español).
   async findCandidates(params: {
     tmdbId: string;
     contentType: string;
@@ -147,6 +149,11 @@ export class SourceRegistryService {
     languageCode?: string;
     limit?: number;
   }): Promise<SourceCandidate[]> {
+    const PROVIDER_PRIORITY: Record<string, number> = {
+      unlimplay: 0,
+      nsrplay: 1,
+      vidlink: 2,
+    };
     const rows = await this.prisma.streamSource.findMany({
       where: {
         tmdbId: params.tmdbId,
@@ -163,8 +170,14 @@ export class SourceRegistryService {
       if (!params.languageCode) return r.languageCode === params.languageCode ? 0 : 1;
       return r.languageCode === params.languageCode ? 0 : 1;
     };
+    const providerPriority = (r: (typeof rows)[number]): number =>
+      PROVIDER_PRIORITY[r.providerId] ?? 99;
     return rows
-      .sort((a, b) => langRank(a) - langRank(b) || b.score - a.score)
+      .sort((a, b) =>
+        langRank(a) - langRank(b) ||
+        providerPriority(a) - providerPriority(b) ||
+        b.score - a.score,
+      )
       .map((r) => ({
         id: r.id,
         tmdbId: r.tmdbId,

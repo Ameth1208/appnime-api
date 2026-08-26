@@ -6,6 +6,29 @@ import { leaseTtl, type ServerResolver } from './server-resolver';
 const NSRPLAY = 'https://nsrplay.space';
 const UA = { 'user-agent': 'Mozilla/5.0 Chrome/126.0', accept: 'application/json' };
 
+/// Hosts de test/fake que nsrplay devuelve cuando no tiene el contenido real.
+const NSRPLAY_BLOCKED = [
+  'test-videos.co.uk',
+  'test-streams.mux.dev',
+  'sample-videos.com',
+  'commondatastorage.googleapis.com',
+  'file-examples.com',
+  'sample-videos.com',
+  'www.w3schools.com',
+  'jplayer.org',
+  'html5rocks.com',
+  'devimages.apple.com',
+];
+
+function isBlocked(url: string): boolean {
+  try {
+    const host = new URL(url).hostname.toLowerCase();
+    return NSRPLAY_BLOCKED.some((h) => host === h || host.endsWith(`.${h}`));
+  } catch {
+    return false;
+  }
+}
+
 interface NsrResolveData {
   playUrl?: string;
 }
@@ -46,6 +69,7 @@ export class NsrPlaySourceResolver implements ServerResolver {
     if (!resolveRes.ok) throw new Error(`nsrplay resolve HTTP ${resolveRes.status}`);
     const rj = (await resolveRes.json()) as { success?: boolean; data?: NsrResolveData };
     if (!rj.success || !rj.data?.playUrl) throw new Error('nsrplay sin playUrl');
+    if (isBlocked(rj.data.playUrl)) throw new Error(`nsrplay stream fake/bloqueado: ${new URL(rj.data.playUrl).hostname}`);
 
     // Validación anti-fantasma: nsrplay a veces responde 200 con una imagen
     // PNG (anti-hotlink) en vez del stream. Verificamos que el playlist que
