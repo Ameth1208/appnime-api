@@ -161,8 +161,10 @@ export class DiscoveryService {
     const json = (await res.json()) as {
       servers?: { name: string; language: string; token?: string; directResolveEligible?: boolean; quality?: string }[];
     };
-    const eligible = (json.servers ?? []).filter((s) => s.directResolveEligible && s.token);
-    // [] = sin servidores para este título (no es un error del provider).
+    const eligible = (json.servers ?? []).filter(
+      (s) => s.directResolveEligible && s.token && s.name && s.language,
+    );
+    // [] = sin servidores válidos para este título (no es un error del provider).
     if (eligible.length === 0) return [];
 
     return eligible.map((s) => ({
@@ -204,8 +206,8 @@ export class DiscoveryService {
   }
 }
 
-function normalizeServerId(raw: string): string {
-  return raw
+function normalizeServerId(raw: string | undefined): string {
+  return (raw ?? 'unknown')
     .toLowerCase()
     .replace(/\s*\d+$/, '') // "streamwish 2" → "streamwish"
     .trim()

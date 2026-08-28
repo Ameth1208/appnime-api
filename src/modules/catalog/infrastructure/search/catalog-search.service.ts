@@ -22,6 +22,7 @@ export class CatalogSearchService {
   private index?: Index;
   private syncing?: Promise<void>;
   private lastSyncAt = 0;
+  private lastWarnAt = 0;
 
   constructor(
     private readonly config: ConfigService,
@@ -118,7 +119,14 @@ export class CatalogSearchService {
       });
       return res.hits;
     } catch (err) {
-      this.logger.warn(`meilisearch search fallo: ${String(err)}`);
+      // Meilisearch puede estar caído o sin sincronizar: no es fatal porque la
+      // búsqueda cae al fallback difuso sobre TMDB (catalog.service). Evitamos
+      // loguear en cada request (espamea la consola).
+      const now = Date.now();
+      if (now - this.lastWarnAt > 10 * 60 * 1000) {
+        this.lastWarnAt = now;
+        this.logger.warn(`meilisearch search fallo: ${String(err)}`);
+      }
       return [];
     }
   }

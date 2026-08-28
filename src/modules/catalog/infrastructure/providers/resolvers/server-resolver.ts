@@ -29,8 +29,8 @@ export function leaseTtl(serverId: string): Date {
 }
 
 /// Normaliza etiquetas de idioma de providers a códigos estables.
-export function languageCodeFor(name: string): string {
-  const n = name.trim().toLowerCase();
+export function languageCodeFor(name: string | undefined): string {
+  const n = (name ?? '').trim().toLowerCase();
   if (n.includes('latino')) return 'es-419';
   if (n.includes('castellano') || n === 'español' || n === 'espanol' || n === 'spanish') return 'es';
   if (n.includes('ingl')) return 'en';
