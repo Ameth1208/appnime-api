@@ -1,5 +1,5 @@
 import { SkipApiKey } from '../../common/decorators/skip-api-key.decorator';
-import { Body, Controller, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { AccountStatus, DevicePlatform, DeviceStatus, PaymentProviderKind, PaymentStatus, Prisma, SubscriptionStatus, UserStatus } from '@prisma/client';
 import { PrismaService } from '../../common/database/prisma.service';
 import { ZodValidationPipe } from '../../common/http/zod-validation.pipe';
@@ -12,7 +12,8 @@ import { AdminInviteMemberUseCase } from '../members/application/use-cases/admin
 import { ManualPaymentService } from '../payments/manual-payment.service';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
 import { AdminGuard, SuperAdminGuard } from './admin.guard';
-import { accountStatusSchema, adminChangePasswordSchema, adminCreateUserSchema, adminDeviceLinkSchema, adminInviteSchema, adminNotifySchema, adminSetRoleSchema, adminTicketMessageSchema, announcementSchema, manualPaymentSchema, paymentStatusSchema, promotionCreateSchema, promotionUpdateSchema, subscriptionUpdateSchema, termsCreateSchema, ticketStatusSchema } from './admin.schemas';
+import { UnavailableCatalogService } from '../catalog/application/catalog-unavailable.service';
+import { accountStatusSchema, adminChangePasswordSchema, adminCreateUserSchema, adminDeviceLinkSchema, adminInviteSchema, adminNotifySchema, adminSetRoleSchema, adminTicketMessageSchema, announcementSchema, catalogUnavailableCheckSchema, catalogUnavailableRegisterSchema, manualPaymentSchema, paymentStatusSchema, promotionCreateSchema, promotionUpdateSchema, subscriptionUpdateSchema, termsCreateSchema, ticketStatusSchema } from './admin.schemas';
 
 @SkipApiKey()
 @Controller('v1/admin')
@@ -25,6 +26,7 @@ export class AdminController {
     private readonly realtime: RealtimeGateway,
     private readonly adminInvite: AdminInviteMemberUseCase,
     private readonly adminDeviceLink: AdminDeviceLinkUseCase,
+    private readonly unavailable: UnavailableCatalogService,
   ) {}
 
   @Get('accounts')
@@ -1116,5 +1118,67 @@ export class AdminController {
       where: { OR: urlConditions },
     });
     return { deleted: count.count };
+  }
+
+  @Get('catalog/unavailable')
+  async unavailableList(
+    @Query('q') q?: string,
+    @Query('contentType') contentType?: string,
+    @Query('page') page?: string,
+    @Query('pageSize') pageSize = '25',
+  ) {
+    return this.unavailable.list({ q, contentType, page: Number(page) || 1, pageSize: Number(pageSize) || 25 });
+  }
+
+  /// Chequea un título completo contra los providers y registra (o libera)
+  /// su disponibilidad. `contentType`: movie | series | anime.
+  @Post('catalog/unavailable/check')
+  async unavailableCheck(
+    @Body(new ZodValidationPipe(catalogUnavailableCheckSchema))
+    body: { tmdbId: string; contentType: 'movie' | 'series' | 'anime'; title?: string; posterUrl?: string; year?: number },
+  ) {
+    const result = await this.unavailable.checkTitle(body.tmdbId, body.contentType, {
+      title: body.title,
+      posterUrl: body.posterUrl,
+      year: body.year,
+    });
+    // Si NO tiene contenido y no quedó parcial → lo registra: se deja de
+    // mostrar en la app. Si lo tiene (resolved) → se libera automáticamente.
+    if (!result.resolved && !result.partial) {
+      await this.unavailable.applyResult({
+        tmdbId: body.tmdbId,
+        contentType: body.contentType,
+        resolved: false,
+        details: { title: body.title, posterUrl: body.posterUrl, year: body.year },
+      });
+    } else if (result.resolved) {
+      await this.unavailable.applyResult({
+        tmdbId: body.tmdbId,
+        contentType: body.contentType,
+        resolved: true,
+      });
+    }
+    return result;
+  }
+
+  /// Registro manual: marca un título como indisponible sin verificar.
+  @Post('catalog/unavailable')
+  unavailableRegister(
+    @Body(new ZodValidationPipe(catalogUnavailableRegisterSchema))
+    body: { tmdbId: string; contentType: 'movie' | 'series' | 'anime'; title: string; posterUrl?: string; year?: number },
+  ) {
+    return this.unavailable.register(body);
+  }
+
+  /// Libera un título (lo vuelve a mostrar en la app).
+  @Delete('catalog/unavailable/:contentType/:tmdbId')
+  unavailableRemove(@Param('contentType') contentType: string, @Param('tmdbId') tmdbId: string) {
+    return this.unavailable.remove(tmdbId, contentType);
+  }
+
+  /// Re-verificación masiva de todos los títulos programados + los marcados.
+  @Post('catalog/unavailable/recheck')
+  async unavailableRecheck() {
+    return this.unavailable.recheckDue();
   }
 }

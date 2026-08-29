@@ -20,6 +20,7 @@ import { StreamResolutionService } from '../infrastructure/providers/stream-reso
 import { SourceRegistryService } from './source-registry.service';
 import { PlaybackService } from './playback.service';
 import { CatalogSearchService } from '../infrastructure/search/catalog-search.service';
+import { UnavailableCatalogService } from './catalog-unavailable.service';
 
 export const MOVIE_PROVIDERS = 'CATALOG_MOVIE_PROVIDERS';
 export const SERIES_PROVIDERS = 'CATALOG_SERIES_PROVIDERS';
@@ -54,6 +55,7 @@ export class CatalogService {
     private readonly config: ConfigService,
     private readonly registry: SourceRegistryService,
     private readonly playback: PlaybackService,
+    private readonly unavailable: UnavailableCatalogService,
   ) {}
 
   listProviders() {
@@ -68,28 +70,36 @@ export class CatalogService {
 
   async moviesPopular(params: ListParams): Promise<Page<ContentSummary>> {
     const items = await this.metadata.moviesPopular(params.page);
-    return { items: items.map((m) => this.toSummary(m, 'movie')), page: params.page, hasMore: items.length >= 20 };
+    const mapped = items.map((m) => this.toSummary(m, 'movie'));
+    return { items: await this.unavailable.filterAvailable(mapped), page: params.page, hasMore: items.length >= 20 };
   }
 
   async seriesPopular(params: ListParams): Promise<Page<ContentSummary>> {
     const items = await this.metadata.seriesPopular(params.page);
-    return { items: items.map((m) => this.toSummary(m, 'series')), page: params.page, hasMore: items.length >= 20 };
+    const mapped = items.map((m) => this.toSummary(m, 'series'));
+    return { items: await this.unavailable.filterAvailable(mapped), page: params.page, hasMore: items.length >= 20 };
   }
 
   async searchMovies(query: string, page: number): Promise<Page<ContentSummary>> {
     if (!query.trim()) return { items: [], page, hasMore: false };
     const meili = await this.searchEngine.search(query, 'movie');
-    if (meili.length > 0) return { items: meili.map((d) => this.docToSummary(d, 'movie')), page, hasMore: false };
+    if (meili.length > 0) {
+      const mapped = meili.map((d) => this.docToSummary(d, 'movie'));
+      return { items: await this.unavailable.filterAvailable(mapped), page, hasMore: false };
+    }
     const items = await this.fuzzySearch('movie', query);
-    return { items: items.map((m) => this.toSummary(m, 'movie')), page, hasMore: false };
+    return { items: await this.unavailable.filterAvailable(items.map((m) => this.toSummary(m, 'movie'))), page, hasMore: false };
   }
 
   async searchSeries(query: string, page: number): Promise<Page<ContentSummary>> {
     if (!query.trim()) return { items: [], page, hasMore: false };
     const meili = await this.searchEngine.search(query, 'series');
-    if (meili.length > 0) return { items: meili.map((d) => this.docToSummary(d, 'series')), page, hasMore: false };
+    if (meili.length > 0) {
+      const mapped = meili.map((d) => this.docToSummary(d, 'series'));
+      return { items: await this.unavailable.filterAvailable(mapped), page, hasMore: false };
+    }
     const items = await this.fuzzySearch('series', query);
-    return { items: items.map((m) => this.toSummary(m, 'series')), page, hasMore: false };
+    return { items: await this.unavailable.filterAvailable(items.map((m) => this.toSummary(m, 'series'))), page, hasMore: false };
   }
 
   private docToSummary(d: { id: string; title: string; posterUrl?: string; year?: number; rating?: number }, type: 'movie' | 'series'): ContentSummary {
@@ -99,6 +109,9 @@ export class CatalogService {
   // ── Detalles ──────────────────────────────────────────────────────────────
 
   async getMovie(id: string): Promise<MovieDetails> {
+    if (await this.unavailable.isBlocked(String(id), 'movie')) {
+      throw new NotFoundException({ code: 'CONTENT_UNAVAILABLE' });
+    }
     const d = await this.metadata.movieDetails(String(id));
     // Prewarm: discovery en background para que la ficha tenga idiomas
     // y el Play posterior sea instantáneo. No bloquea la respuesta.
@@ -112,6 +125,9 @@ export class CatalogService {
   }
 
   async getSeries(id: string): Promise<SeriesDetails> {
+    if (await this.unavailable.isBlocked(String(id), 'series')) {
+      throw new NotFoundException({ code: 'CONTENT_UNAVAILABLE' });
+    }
     let d;
     try {
       d = await this.metadata.seriesDetails(String(id));

@@ -20,6 +20,8 @@ import { AdultFilterMiddleware } from './adult-filter.middleware';
 import { SourceRegistryService } from './application/source-registry.service';
 import { DiscoveryService } from './application/discovery.service';
 import { PlaybackService } from './application/playback.service';
+import { UnavailableCatalogService } from './application/catalog-unavailable.service';
+import { UnavailableCatalogJob } from './application/catalog-unavailable.job';
 import { ResolverRegistry } from './infrastructure/providers/resolvers/resolver-registry';
 import { UnlimplaySourceResolver } from './infrastructure/providers/resolvers/unlimplay.resolver';
 import { VidlinkSourceResolver } from './infrastructure/providers/resolvers/vidlink.resolver';
@@ -57,9 +59,11 @@ import { NsrPlaySourceResolver } from './infrastructure/providers/resolvers/nsrp
     NsrPlaySourceResolver,
     ResolverRegistry,
     PlaybackService,
+    UnavailableCatalogService,
+    UnavailableCatalogJob,
     CatalogService,
   ],
-  exports: [CatalogService],
+  exports: [CatalogService, UnavailableCatalogService],
 })
 export class CatalogModule implements NestModule {
   configure(consumer: MiddlewareConsumer) {

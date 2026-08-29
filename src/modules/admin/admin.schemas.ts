@@ -55,3 +55,19 @@ export const adminSetRoleSchema = z.object({
   permissions: z.array(z.string()).optional(),
 });
 export const adminChangePasswordSchema = z.object({ password: z.string().min(8).max(128) });
+
+export const catalogUnavailableCheckSchema = z.object({
+  tmdbId: z.string().min(1),
+  contentType: z.enum(['movie', 'series', 'anime']),
+  title: z.string().optional(),
+  posterUrl: z.string().optional(),
+  year: z.number().int().optional(),
+});
+
+export const catalogUnavailableRegisterSchema = z.object({
+  tmdbId: z.string().min(1),
+  contentType: z.enum(['movie', 'series', 'anime']),
+  title: z.string().min(1),
+  posterUrl: z.string().optional(),
+  year: z.number().int().optional(),
+});

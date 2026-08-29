@@ -1,6 +1,7 @@
 import { Controller, Get, NotFoundException, Param, Post, Query } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { CatalogService } from './application/catalog.service';
+import { UnavailableCatalogService } from './application/catalog-unavailable.service';
 import { TmdbService } from './infrastructure/tmdb/tmdb.service';
 import { PlaybackService, type ResolveRequest } from './application/playback.service';
 import type { ResolvedLease } from './application/playback.service';
@@ -12,6 +13,7 @@ export class CatalogController {
     private readonly tmdb: TmdbService,
     private readonly playback: PlaybackService,
     private readonly config: ConfigService,
+    private readonly unavailable: UnavailableCatalogService,
   ) {}
 
   private checkUnlock(unlock?: string): void {
@@ -30,12 +32,22 @@ export class CatalogController {
   async animeSearch(@Query('q') q = '', @Query('page') page = '1') {
     const p = Math.max(1, Number(page) || 1);
     const res = await this.tmdb.seriesAnimeSearch(q, p);
-    return res.results.map((r) => ({
-      id: String(r.id),
-      title: r.name ?? r.title ?? '',
-      posterUrl: this.tmdb.imageUrl(r.poster_path),
-      year: r.first_air_date ? Number(r.first_air_date.slice(0, 4)) : undefined,
-      rating: r.vote_average,
+    const items = await this.unavailable.filterAvailable(
+      res.results.map((r) => ({
+        id: String(r.id),
+        type: 'anime' as const,
+        title: r.name ?? r.title ?? '',
+        posterUrl: this.tmdb.imageUrl(r.poster_path),
+        year: r.first_air_date ? Number(r.first_air_date.slice(0, 4)) : undefined,
+        rating: r.vote_average,
+      })),
+    );
+    return items.map((r) => ({
+      id: r.id,
+      title: r.title,
+      posterUrl: r.posterUrl,
+      year: r.year,
+      rating: r.rating,
       type: 'Serie',
       url: `https://pelis24.online/serie/${r.id}`,
     }));
@@ -45,12 +57,22 @@ export class CatalogController {
   async animePopular(@Query('page') page = '1') {
     const p = Math.max(1, Number(page) || 1);
     const res = await this.tmdb.seriesAnime(p);
-    return res.results.map((r) => ({
-      id: String(r.id),
-      title: r.name ?? r.title ?? '',
-      posterUrl: this.tmdb.imageUrl(r.poster_path),
-      year: r.first_air_date ? Number(r.first_air_date.slice(0, 4)) : undefined,
-      rating: r.vote_average,
+    const items = await this.unavailable.filterAvailable(
+      res.results.map((r) => ({
+        id: String(r.id),
+        type: 'anime' as const,
+        title: r.name ?? r.title ?? '',
+        posterUrl: this.tmdb.imageUrl(r.poster_path),
+        year: r.first_air_date ? Number(r.first_air_date.slice(0, 4)) : undefined,
+        rating: r.vote_average,
+      })),
+    );
+    return items.map((r) => ({
+      id: r.id,
+      title: r.title,
+      posterUrl: r.posterUrl,
+      year: r.year,
+      rating: r.rating,
       type: 'Serie',
       url: `https://pelis24.online/serie/${r.id}`,
     }));
@@ -127,6 +149,9 @@ export class CatalogController {
     @Param('episode') episode: string,
     @Query('lang') lang = 'es-419',
   ) {
+    if (await this.unavailable.isBlocked(String(id), 'series')) {
+      throw new NotFoundException({ code: 'CONTENT_UNAVAILABLE' });
+    }
     const req: ResolveRequest = {
       tmdbId: id,
       contentType: 'series',
@@ -146,6 +171,9 @@ export class CatalogController {
 
   @Get('movies/:id/resolve')
   async resolveMovie(@Param('id') id: string, @Query('lang') lang = 'es-419') {
+    if (await this.unavailable.isBlocked(String(id), 'movie')) {
+      throw new NotFoundException({ code: 'CONTENT_UNAVAILABLE' });
+    }
     const req: ResolveRequest = { tmdbId: id, contentType: 'movie', languageCode: lang || undefined };
     const leases = await this.playback.resolve(req);
     if (leases.length === 0) {

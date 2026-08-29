@@ -106,6 +106,33 @@ enum ActivationCodeKind {
   LIFETIME
 }
 
+/// Catálogo marcado como SIN contenido disponible en los proveedores
+/// actuales (ninguna temporada/episodio resuelve un stream).
+///
+/// La app lo oculta; un job o una acción manual lo re-verifica cuando se
+/// agregan proveedores nuevos. Si vuelve a resolver, la fila se elimina y el
+/// título vuelve a mostrarse.
+model CatalogUnavailable {
+  id          String   @id @default(uuid())
+  tmdbId      String
+  contentType String // movie | series | anime
+  title       String
+  posterUrl   String?
+  year        Int?
+
+  /// Detalle de la última verificación (JSON con episodios probados, etc).
+  lastCheck   Json?
+
+  /// Próxima revisión programada (job cada 30 días).
+  nextCheckAt DateTime @default(now())
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([tmdbId, contentType])
+  @@index([nextCheckAt])
+}
+
 enum ActivationDurationUnit {
   DAY
   MONTH
